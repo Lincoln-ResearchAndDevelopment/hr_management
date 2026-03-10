@@ -1,0 +1,440 @@
+<?php
+
+/**
+ * Bulk Attendance Upload Page for HR
+ * Allows HR to upload CSV/Excel files with attendance data
+ */
+session_start();
+include '../../config.php';
+include '../classes/HRAuth.php';
+include '../../classes/AttendanceImporter.php';
+
+$hr_auth = new HRAuth($conn);
+
+if (!$hr_auth->isHRLoggedIn()) {
+    header('Location: ../login.php');
+    exit;
+}
+
+$user = $hr_auth->getCurrentHR();
+$page_title = 'Bulk Attendance Upload';
+$upload_result = null;
+$message = '';
+
+// Handle file upload
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['attendance_file'])) {
+    $file = $_FILES['attendance_file'];
+    $allowed_types = ['text/csv', 'text/plain', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
+    $max_size = 5 * 1024 * 1024; // 5MB
+
+    // Validate file
+    if ($file['error'] !== UPLOAD_ERR_OK) {
+        $message = '<div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <i class="fas fa-exclamation-circle"></i> File upload error. Please try again.
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>';
+    } elseif (!in_array($file['type'], $allowed_types)) {
+        $message = '<div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <i class="fas fa-exclamation-circle"></i> Invalid file type. Please upload CSV or Excel file.
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>';
+    } elseif ($file['size'] > $max_size) {
+        $message = '<div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <i class="fas fa-exclamation-circle"></i> File size exceeds 5MB limit.
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>';
+    } else {
+        // Save uploaded file temporarily
+        $upload_dir = '../../assets/uploads/attendance/';
+        if (!is_dir($upload_dir)) {
+            mkdir($upload_dir, 0755, true);
+        }
+
+        $temp_file = $upload_dir . uniqid() . '_' . basename($file['name']);
+
+        if (move_uploaded_file($file['tmp_name'], $temp_file)) {
+            $importer = new AttendanceImporter($conn);
+
+            // Parse file
+            $parse_result = $importer->parseCSVFile($temp_file);
+
+            if ($parse_result['success']) {
+                // Process records
+                $upload_result = $importer->processAttendanceRecords($parse_result['records']);
+
+                if ($upload_result['success'] && $upload_result['processed'] > 0) {
+                    $message = '<div class="alert alert-success alert-dismissible fade show" role="alert">
+                        <i class="fas fa-check-circle"></i> 
+                        <strong>Success!</strong> Processed ' . $upload_result['processed'] . ' attendance records.
+                        ' . (count($upload_result['late_arrivals']) > 0 ? count($upload_result['late_arrivals']) . ' late arrivals detected and deductions applied.' : '') . '
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>';
+                } elseif ($upload_result['processed'] == 0) {
+                    $message = '<div class="alert alert-warning alert-dismissible fade show" role="alert">
+                        <i class="fas fa-exclamation-triangle"></i> No records were processed.
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>';
+                }
+            } else {
+                $message = '<div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <i class="fas fa-exclamation-circle"></i> ' . $parse_result['message'] . '
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>';
+            }
+
+            // Clean up temp file
+            if (file_exists($temp_file)) {
+                unlink($temp_file);
+            }
+        } else {
+            $message = '<div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <i class="fas fa-exclamation-circle"></i> Failed to upload file. Please check folder permissions.
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>';
+        }
+    }
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><?php echo $page_title; ?> - HR Dashboard</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            font-family: 'Poppins', sans-serif;
+        }
+
+        body {
+            background-color: #f5f7fa;
+        }
+
+        .main-content {
+            margin-left: 280px;
+            margin-top: 70px;
+            padding: 30px;
+            transition: margin-left 0.3s ease;
+        }
+
+        .main-content.full-width {
+            margin-left: 0;
+        }
+
+        .topbar {
+            position: fixed;
+            top: 0;
+            left: 280px;
+            right: 0;
+            height: 70px;
+            background: white;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            align-items: center;
+            padding: 0 30px;
+            z-index: 999;
+            transition: all 0.3s ease;
+        }
+
+        .topbar.full-width {
+            left: 0;
+        }
+
+        .toggle-btn {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: #333;
+            cursor: pointer;
+            transition: color 0.3s;
+            margin-right: 20px;
+        }
+
+        .toggle-btn:hover {
+            color: #C82333;
+        }
+
+        .topbar-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #333;
+        }
+
+        .card {
+            border: none;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .card-header {
+            background: linear-gradient(135deg, #C82333 0%, #a01c28 100%);
+            color: white;
+            border-radius: 10px 10px 0 0 !important;
+            padding: 20px;
+            font-weight: 600;
+        }
+
+        .upload-zone {
+            border: 2px dashed #C82333;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .upload-zone:hover {
+            background-color: #fff5f5;
+            border-color: #a01c28;
+        }
+
+        .upload-zone.dragover {
+            background-color: #fff5f5;
+            border-color: #C82333;
+        }
+
+        .template-download {
+            margin-top: 20px;
+        }
+
+        .template-download a {
+            color: #C82333;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .template-download a:hover {
+            text-decoration: underline;
+        }
+
+        .info-box {
+            background-color: #f8f9fa;
+            border-left: 4px solid #C82333;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+
+        .results-table {
+            margin-top: 20px;
+        }
+
+        .results-table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            border-bottom: 2px solid #C82333;
+        }
+
+        .late-badge {
+            background-color: #ffc107;
+            color: #000;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .deduction-badge {
+            background-color: #dc3545;
+            color: #fff;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Include Sidebar -->
+    <?php include '../components/sidebar.php'; ?>
+
+    <!-- Topbar -->
+    <div class="topbar" id="topbar">
+        <div style="display: flex; align-items: center; gap: 20px;">
+            <button class="toggle-btn" id="toggleBtn"><i class="fas fa-bars"></i></button>
+            <h1 class="topbar-title">Bulk Attendance Upload</h1>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content" id="mainContent">
+        <div class="row">
+            <div class="col-12">
+                <?php echo $message; ?>
+
+                <!-- Upload Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <i class="fas fa-cloud-upload-alt"></i> Upload Attendance File
+                    </div>
+                    <div class="card-body">
+                        <form method="POST" enctype="multipart/form-data">
+                            <div class="upload-zone" id="uploadZone">
+                                <i class="fas fa-file-csv" style="font-size: 48px; color: #C82333; margin-bottom: 15px; display: block;"></i>
+                                <h5>Drag & drop your CSV file here</h5>
+                                <p class="text-muted">or click to select</p>
+                                <input type="file" id="fileInput" name="attendance_file" accept=".csv,.xlsx,.xls" style="display: none;">
+                            </div>
+
+                            <div class="info-box">
+                                <h6><i class="fas fa-info-circle"></i> File Requirements:</h6>
+                                <ul style="margin-bottom: 0; padding-left: 20px;">
+                                    <li>CSV or Excel format (.csv, .xlsx, .xls)</li>
+                                    <li>Required columns: <strong>last_name, date, check_in_time</strong></li>
+                                    <li>Optional columns: first_name, check_out_time</li>
+                                    <li>Date format: YYYY-MM-DD, DD-MM-YYYY, or M/D/Y</li>
+                                    <li>Time format: HH:MM or HH:MM:SS (24-hour)</li>
+                                    <li>Late arrival threshold: 09:00 AM (automatic -200 deduction per occurrence)</li>
+                                    <li>Maximum file size: 5MB</li>
+                                </ul>
+                            </div>
+
+                            <button type="submit" class="btn btn-danger mt-3" style="display: none;" id="submitBtn">
+                                <i class="fas fa-upload"></i> Upload Attendance
+                            </button>
+
+                            <div class="template-download">
+                                <h6><i class="fas fa-download"></i> Download Template:</h6>
+                                <a href="../../assets/uploads/attendance_template.xlsx" download="attendance_template.xlsx">
+                                    <i class="fas fa-file-excel"></i> Sample Excel Template (Magaji Format)
+                                </a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Results Card -->
+                <?php if ($upload_result && $upload_result['success']): ?>
+                    <div class="card">
+                        <div class="card-header">
+                            <i class="fas fa-chart-bar"></i> Upload Summary
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-3">
+                                    <div class="info-box">
+                                        <h6 style="margin-bottom: 10px;">Processed</h6>
+                                        <h3 style="color: #28A745; margin: 0;"><?php echo $upload_result['processed']; ?></h3>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="info-box">
+                                        <h6 style="margin-bottom: 10px;">Late Arrivals</h6>
+                                        <h3 style="color: #ffc107; margin: 0;"><?php echo count($upload_result['late_arrivals']); ?></h3>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="info-box">
+                                        <h6 style="margin-bottom: 10px;">Total Deductions</h6>
+                                        <h3 style="color: #dc3545; margin: 0;">₦<?php echo count($upload_result['late_arrivals']) * 200; ?></h3>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="info-box">
+                                        <h6 style="margin-bottom: 10px;">Errors</h6>
+                                        <h3 style="color: #6c757d; margin: 0;"><?php echo count($upload_result['errors']); ?></h3>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <?php if (!empty($upload_result['late_arrivals'])): ?>
+                                <div class="results-table mt-4">
+                                    <h6>Late Arrivals Detected & Deductions Applied:</h6>
+                                    <div class="table-responsive">
+                                        <table class="table table-hover">
+                                            <thead>
+                                                <tr>
+                                                    <th>Staff Name</th>
+                                                    <th>Date</th>
+                                                    <th>Check-in Time</th>
+                                                    <th>Deduction</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php foreach ($upload_result['late_arrivals'] as $late): ?>
+                                                    <tr>
+                                                        <td><?php echo htmlspecialchars($late['staff_name']); ?></td>
+                                                        <td><?php echo date('M d, Y', strtotime($late['date'])); ?></td>
+                                                        <td><span class="late-badge"><?php echo $late['check_in_time']; ?></span></td>
+                                                        <td><span class="deduction-badge">-₦200</span></td>
+                                                    </tr>
+                                                <?php endforeach; ?>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
+
+                            <?php if (!empty($upload_result['errors'])): ?>
+                                <div class="alert alert-warning mt-4">
+                                    <h6><i class="fas fa-exclamation-triangle"></i> Errors Encountered:</h6>
+                                    <ul style="margin-bottom: 0;">
+                                        <?php foreach (array_slice($upload_result['errors'], 0, 10) as $error): ?>
+                                            <li><?php echo htmlspecialchars($error); ?></li>
+                                        <?php endforeach; ?>
+                                        <?php if (count($upload_result['errors']) > 10): ?>
+                                            <li>... and <?php echo count($upload_result['errors']) - 10; ?> more errors</li>
+                                        <?php endif; ?>
+                                    </ul>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const uploadZone = document.getElementById('uploadZone');
+        const fileInput = document.getElementById('fileInput');
+        const submitBtn = document.getElementById('submitBtn');
+
+        uploadZone.addEventListener('click', () => fileInput.click());
+
+        // Drag and drop
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        });
+
+        uploadZone.addEventListener('dragleave', () => {
+            uploadZone.classList.remove('dragover');
+        });
+
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            fileInput.files = e.dataTransfer.files;
+            submitBtn.style.display = 'inline-block';
+        });
+
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length > 0) {
+                submitBtn.style.display = 'inline-block';
+            }
+        });
+
+        // Toggle Sidebar
+        const toggleBtn = document.getElementById('toggleBtn');
+        const sidebar = document.getElementById('sidebar');
+        const topbar = document.getElementById('topbar');
+        const mainContent = document.getElementById('mainContent');
+
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', function() {
+                sidebar.classList.toggle('collapsed');
+                topbar.classList.toggle('full-width');
+                mainContent.classList.toggle('full-width');
+            });
+        }
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        * {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        body {
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #FFC107 0%, #FF9800 100%);
+            color: #ffffff;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+        .content {
+            padding: 30px;
+            color: #333333;
+        }
+        .content p {
+            line-height: 1.6;
+            margin: 15px 0;
+        }
+        .reminder-box {
+            background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+            border-left: 4px solid #FF9800;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .interview-info {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        .detail-label {
+            font-weight: 600;
+            color: #495057;
+        }
+        .detail-value {
+            color: #212529;
+        }
+        .countdown {
+            font-size: 36px;
+            font-weight: 700;
+            color: #FF9800;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .button {
+            display: inline-block;
+            background-color: #FF9800;
+            color: #ffffff;
+            padding: 12px 30px;
+            text-decoration: none;
+            border-radius: 4px;
+            margin: 20px auto;
+            font-weight: 600;
+            text-align: center;
+        }
+        .footer {
+            background-color: #f8f9fa;
+            padding: 20px;
+            text-align: center;
+            color: #666666;
+            font-size: 12px;
+        }
+        .footer p {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⏰ Interview Reminder</h1>
+        </div>
+        
+        <div class="content">
+            <p>Hello {{recipientName}},</p>
+            
+            <p>This is a friendly reminder that your interview is scheduled for <strong>tomorrow!</strong></p>
+            
+            <div class="reminder-box">
+                <p style="margin: 0; font-size: 18px;">Your interview for <strong>{{jobTitle}}</strong> is tomorrow at <strong>{{interviewTime}}</strong></p>
+            </div>
+            
+            <div class="interview-info">
+                <div class="detail-row">
+                    <span class="detail-label">📅 Date:</span>
+                    <span class="detail-value"><strong>{{interviewDate}} (Tomorrow)</strong></span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">🕐 Time:</span>
+                    <span class="detail-value"><strong>{{interviewTime}}</strong></span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">💼 Position:</span>
+                    <span class="detail-value"><strong>{{jobTitle}}</strong></span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">🏢 Company:</span>
+                    <span class="detail-value"><strong>{{company}}</strong></span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">💻 Type:</span>
+                    <span class="detail-value"><strong>{{interviewType}}</strong></span>
+                </div>
+            </div>
+            
+            <p><strong>📋 Final Reminders:</strong></p>
+            <ul style="line-height: 1.8;">
+                <li>Ensure you have a stable internet connection (for video interviews)</li>
+                <li>Test your webcam and microphone</li>
+                <li>Dress professionally</li>
+                <li>Have your resume and cover letter ready</li>
+                <li>Be on time - join 5 minutes early</li>
+            </ul>
+            
+            <p>If you need to reschedule or have any questions, please contact us immediately.</p>
+            
+            <p>Good luck! We look forward to meeting you.<br>
+            <strong>Lincoln HR System Team</strong></p>
+        </div>
+        
+        <div class="footer">
+            <p>&copy; 2026 Lincoln University College. All rights reserved.</p>
+            <p>This is an automated email, please do not reply directly.</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,28 @@
+<svg width="600" height="800" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667EEA;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#764BA2;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="600" height="800" fill="url(#bgGrad1)"/>
+  
+  <!-- Cathedral/Building silhouettes -->
+  <path d="M 100 400 L 120 300 L 140 400 Z" fill="#FFFFFF" opacity="0.15"/>
+  <rect x="120" y="400" width="20" height="300" fill="#FFFFFF" opacity="0.15"/>
+  
+  <path d="M 200 350 L 230 200 L 260 350 Z" fill="#FFFFFF" opacity="0.2"/>
+  <rect x="230" y="350" width="30" height="350" fill="#FFFFFF" opacity="0.2"/>
+  
+  <path d="M 350 380 L 380 250 L 410 380 Z" fill="#FFFFFF" opacity="0.12"/>
+  <rect x="380" y="380" width="30" height="320" fill="#FFFFFF" opacity="0.12"/>
+  
+  <path d="M 450 400 L 480 280 L 510 400 Z" fill="#FFFFFF" opacity="0.18"/>
+  <rect x="480" y="400" width="30" height="300" fill="#FFFFFF" opacity="0.18"/>
+  
+  <!-- Decorative circles -->
+  <circle cx="80" cy="150" r="60" fill="#FFFFFF" opacity="0.08"/>
+  <circle cx="520" cy="200" r="80" fill="#FFFFFF" opacity="0.06"/>
+  <circle cx="150" cy="700" r="100" fill="#FFFFFF" opacity="0.05"/>
+  <circle cx="500" cy="650" r="70" fill="#FFFFFF" opacity="0.07"/>
+</svg>

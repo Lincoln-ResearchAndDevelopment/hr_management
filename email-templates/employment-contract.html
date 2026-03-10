@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Employment Contract</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667EEA 0%, #764BA2 100%);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 22px;
+            font-weight: 600;
+        }
+        .content {
+            padding: 30px 25px;
+            color: #333;
+        }
+        .content p {
+            margin: 0 0 15px 0;
+            line-height: 1.6;
+        }
+        .info-box {
+            background-color: #f9f9f9;
+            border-left: 4px solid #667EEA;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .info-box p {
+            margin: 6px 0;
+        }
+        .footer {
+            background-color: #f5f5f5;
+            padding: 15px 25px;
+            border-top: 1px solid #e0e0e0;
+            font-size: 12px;
+            color: #666;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Employment Contract</h1>
+        </div>
+        <div class="content">
+            <p>Dear {{staffName}},</p>
+            <p>This document serves as your employment contract with Lincoln University College. Please review the details below:</p>
+            <div class="info-box">
+                <p><strong>Name:</strong> {{staffName}}</p>
+                <p><strong>Date Issued:</strong> {{dateIssued}}</p>
+                <p><strong>Contract Start Date:</strong> {{contractStartDate}}</p>
+                <p><strong>Contract End Date:</strong> {{contractEndDate}}</p>
+            </div>
+            <p>If you have any questions, please contact HR.</p>
+        </div>
+        <div class="footer">
+            Lincoln University College HR System
+        </div>
+    </div>
+</body>
+</html>

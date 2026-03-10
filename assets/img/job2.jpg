@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="180" viewBox="0 0 300 180">
+  <defs>
+    <linearGradient id="job2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4ECDC4;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#44A08D;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="300" height="180" fill="url(#job2)"/>
+  <text x="150" y="90" font-family="Poppins" font-size="16" fill="#fff" text-anchor="middle" font-weight="700">Job Opportunity</text>
+</svg>

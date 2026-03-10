@@ -1,0 +1,15 @@
+<svg width="400" height="300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="grad4" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#F093FB;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#F5576C;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="400" height="300" fill="url(#grad4)"/>
+  <circle cx="200" cy="100" r="45" fill="#FFFFFF" opacity="0.95"/>
+  <circle cx="170" cy="85" r="13" fill="#F5576C" opacity="0.3"/>
+  <circle cx="230" cy="88" r="11" fill="#F5576C" opacity="0.3"/>
+  <path d="M 175 135 Q 200 150 225 135" stroke="#FFFFFF" stroke-width="4" fill="none" stroke-linecap="round" opacity="0.8"/>
+  <rect x="100" y="200" width="200" height="90" fill="#FFFFFF" opacity="0.15"/>
+  <text x="200" y="250" font-family="Arial" font-size="16" fill="#FFFFFF" text-anchor="middle" opacity="0.7">Lora Shrof</text>
+</svg>

@@ -1,0 +1,33 @@
+<svg width="400" height="500" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="gradCta" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#E8B4C0;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#D4928F;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="400" height="500" fill="url(#gradCta)"/>
+  
+  <!-- Head -->
+  <circle cx="200" cy="120" r="40" fill="#D4A098" opacity="0.9"/>
+  
+  <!-- Hair -->
+  <path d="M 160 110 Q 160 70 200 65 Q 240 70 240 110" fill="#8B5A4C" opacity="0.9"/>
+  
+  <!-- Headphones -->
+  <ellipse cx="200" cy="105" rx="50" ry="8" fill="none" stroke="#6B4423" stroke-width="4"/>
+  <circle cx="155" cy="110" r="8" fill="#6B4423" opacity="0.8"/>
+  <circle cx="245" cy="110" r="8" fill="#6B4423" opacity="0.8"/>
+  
+  <!-- Face -->
+  <circle cx="185" cy="125" r="6" fill="#6B4423" opacity="0.7"/>
+  <circle cx="215" cy="125" r="6" fill="#6B4423" opacity="0.7"/>
+  <path d="M 190 140 Q 200 145 210 140" stroke="#8B5A4C" stroke-width="2" fill="none" stroke-linecap="round" opacity="0.7"/>
+  
+  <!-- Shoulders/Clothing -->
+  <ellipse cx="200" cy="200" rx="70" ry="50" fill="#FFFFFF" opacity="0.9"/>
+  <path d="M 145 160 L 255 160 L 250 220 Q 200 240 150 220 Z" fill="#F5F5F5" opacity="0.95"/>
+  
+  <!-- Arms -->
+  <ellipse cx="130" cy="190" rx="15" ry="60" fill="#D4A098" opacity="0.8" transform="rotate(-30 130 190)"/>
+  <ellipse cx="270" cy="190" rx="15" ry="60" fill="#D4A098" opacity="0.8" transform="rotate(30 270 190)"/>
+</svg>

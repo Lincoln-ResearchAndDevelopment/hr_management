@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        * {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        body {
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #C82333 0%, #a01c28 100%);
+            color: #ffffff;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+        .content {
+            padding: 30px;
+            color: #333333;
+        }
+        .content p {
+            line-height: 1.6;
+            margin: 15px 0;
+        }
+        .applicant-card {
+            background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+            border-left: 4px solid #28A745;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+        }
+        .detail-label {
+            font-weight: 600;
+            color: #495057;
+        }
+        .detail-value {
+            color: #212529;
+        }
+        .button {
+            display: inline-block;
+            background-color: #C82333;
+            color: #ffffff;
+            padding: 12px 30px;
+            text-decoration: none;
+            border-radius: 4px;
+            margin: 20px 0;
+            font-weight: 600;
+        }
+        .actions {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .action-link {
+            display: inline-block;
+            background-color: #007BFF;
+            color: #ffffff;
+            padding: 10px 25px;
+            text-decoration: none;
+            border-radius: 4px;
+            margin: 5px;
+            font-size: 14px;
+        }
+        .highlight {
+            background-color: #fff3cd;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: 600;
+        }
+        .footer {
+            background-color: #f8f9fa;
+            padding: 20px;
+            text-align: center;
+            color: #666666;
+            font-size: 12px;
+        }
+        .footer p {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📬 New Application Received</h1>
+        </div>
+        
+        <div class="content">
+            <p>Hello {{hrName}},</p>
+            
+            <p>A new application has been submitted for the <span class="highlight">{{jobTitle}}</span> position at <strong>{{company}}</strong>.</p>
+            
+            <div class="applicant-card">
+                <h3 style="margin-top: 0; color: #333;">Applicant Information</h3>
+                <div class="detail-row">
+                    <span class="detail-label">👤 Name:</span>
+                    <span class="detail-value"><strong>{{applicantName}}</strong></span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">📧 Email:</span>
+                    <span class="detail-value">{{applicantEmail}}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">📱 Phone:</span>
+                    <span class="detail-value">{{applicantPhone}}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">⏰ Submitted:</span>
+                    <span class="detail-value">{{submissionTime}}</span>
+                </div>
+            </div>
+            
+            <p>You can now review their application and take the following actions:</p>
+            
+            <div class="actions">
+                <a href="#" class="action-link">📋 Review Application</a>
+                <a href="#" class="action-link">📅 Schedule Interview</a>
+            </div>
+            
+            <p>This is one of potentially many applications for this position. Review them in your HR dashboard to manage the hiring process efficiently.</p>
+            
+            <p>Best regards,<br>
+            <strong>Lincoln HR System</strong></p>
+        </div>
+        
+        <div class="footer">
+            <p>&copy; 2026 Lincoln University College. All rights reserved.</p>
+            <p>This is an automated email, please do not reply directly.</p>
+        </div>
+    </div>
+</body>
+</html>

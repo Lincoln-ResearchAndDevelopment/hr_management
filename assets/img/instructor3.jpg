@@ -1,0 +1,15 @@
+<svg width="400" height="300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="grad5" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4FACFE;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#00F2FE;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="400" height="300" fill="url(#grad5)"/>
+  <circle cx="200" cy="100" r="45" fill="#FFFFFF" opacity="0.95"/>
+  <circle cx="172" cy="82" r="12" fill="#00F2FE" opacity="0.3"/>
+  <circle cx="228" cy="92" r="11" fill="#00F2FE" opacity="0.3"/>
+  <path d="M 178 132 Q 200 148 222 132" stroke="#FFFFFF" stroke-width="4" fill="none" stroke-linecap="round" opacity="0.8"/>
+  <rect x="100" y="200" width="200" height="90" fill="#FFFFFF" opacity="0.15"/>
+  <text x="200" y="250" font-family="Arial" font-size="16" fill="#FFFFFF" text-anchor="middle" opacity="0.7">John Smith</text>
+</svg>
