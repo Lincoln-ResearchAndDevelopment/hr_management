@@ -25,9 +25,9 @@ class HRManager
         }
 
         $allowed_locations = [
-            'Abuja Campus',
-            'Nasarawa State Campus (Nsuk)',
-            'Gombe'
+            'Lincoln College, Abuja Campus',
+            'Lincoln University, NSUK Campus',
+            'Lincoln University, Kumo Campus'
         ];
 
         if (!in_array($location, $allowed_locations, true)) {

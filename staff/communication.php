@@ -38,7 +38,12 @@ $disciplinary_count_query->bind_param("i", $staff_id);
 $disciplinary_count_query->execute();
 $disciplinary_count = $disciplinary_count_query->get_result()->fetch_assoc()['total'];
 
-$training_count_query = $conn->prepare("SELECT COUNT(*) as total FROM training_attendance WHERE staff_id = ?");
+$training_count_query = $conn->prepare(
+    "SELECT COUNT(*) as total
+     FROM staff_trainings st
+     JOIN staff_training_attendees sta ON sta.training_id = st.id
+     WHERE sta.staff_id = ? AND st.training_date >= CURDATE()"
+);
 $training_count_query->bind_param("i", $staff_id);
 $training_count_query->execute();
 $training_count = $training_count_query->get_result()->fetch_assoc()['total'];
@@ -407,6 +412,12 @@ $training_count = $training_count_query->get_result()->fetch_assoc()['total'];
                 </a>
             </li>
             <li style="border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 15px; margin-top: 10px;">
+                <a href="handbook.php">
+                    <i class="fas fa-book"></i>
+                    <span>Staff Handbook</span>
+                </a>
+            </li>
+            <li>
                 <a href="request-permission.php">
                     <i class="fas fa-clipboard-check"></i>
                     <span>Request Permission</span>

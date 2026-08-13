@@ -37,14 +37,24 @@ if ($job_id > 0) {
     $applicants = $hr_manager->getAllApplicants($user['id']);
 }
 
+$campus_locations = [
+    'Lincoln College, Abuja Campus',
+    'Lincoln University, NSUK Campus',
+    'Lincoln University, Kumo Campus'
+];
+
 // Handle hire applicant
 $status_message = '';
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['hire_applicant'])) {
-    include '../../classes/Mailer.php';
+    include_once '../../classes/Mailer.php';
 
     $application_id = intval($_POST['application_id']);
     $position = trim($_POST['position']);
     $department = trim($_POST['department']);
+    $campus_location = trim($_POST['campus_location'] ?? '');
+    if (!in_array($campus_location, $campus_locations, true)) {
+        $campus_location = null;
+    }
     $hire_date = trim($_POST['hire_date']);
     $salary = floatval($_POST['salary']);
     $lincoln_email = trim($_POST['lincoln_email']);
@@ -63,11 +73,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['hire_applicant'])) {
         // 2. Create staff record with hashed password
         $hashed_password = password_hash($default_password, PASSWORD_DEFAULT);
         $insert_staff = $conn->prepare(
-            "INSERT INTO staff (first_name, last_name, email, lincoln_email, password, position, department, hire_date, salary, status, created_by) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)"
+            "INSERT INTO staff (first_name, last_name, email, lincoln_email, password, position, department, campus_location, hire_date, salary, status, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)"
         );
         $insert_staff->bind_param(
-            "ssssssssdi",
+            "sssssssssdi",
             $applicant['first_name'],
             $applicant['last_name'],
             $applicant['email'],
@@ -75,6 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['hire_applicant'])) {
             $hashed_password,
             $position,
             $department,
+            $campus_location,
             $hire_date,
             $salary,
             $user['id']
@@ -127,14 +138,47 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['hire_applicant'])) {
 
 // Handle status update
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_status'])) {
+    include_once '../../classes/Mailer.php';
+
     $application_id = intval($_POST['application_id']);
     $new_status = trim($_POST['status']);
+
+    // Get applicant and job info for the notification email, before updating
+    $app_query = $conn->prepare(
+        "SELECT u.first_name, u.last_name, u.email, jv.title, jv.company
+         FROM job_applications ja
+         JOIN users u ON ja.user_id = u.id
+         JOIN job_vacancies jv ON ja.job_vacancy_id = jv.id
+         WHERE ja.id = ?"
+    );
+    $app_query->bind_param("i", $application_id);
+    $app_query->execute();
+    $app_data = $app_query->get_result()->fetch_assoc();
 
     $result = $hr_manager->updateApplicationStatus($application_id, $new_status);
 
     if ($result['success']) {
+        // Notify the applicant by email of the status change
+        $email_status_note = '';
+        if ($app_data) {
+            try {
+                $mailer = new Mailer();
+                $email_sent = $mailer->sendApplicationStatusUpdate(
+                    $app_data['email'],
+                    $app_data['first_name'] . ' ' . $app_data['last_name'],
+                    $app_data['title'],
+                    $app_data['company'],
+                    $new_status
+                );
+                $email_status_note = $email_sent ? '<br><small>Applicant notified by email.</small>' : '<br><small>Note: Email notification may have failed.</small>';
+            } catch (Exception $e) {
+                error_log("Failed to send application status update notification: " . $e->getMessage());
+                $email_status_note = '<br><small>Note: Email notification may have failed.</small>';
+            }
+        }
+
         $status_message = '<div class="alert alert-success alert-dismissible fade show" role="alert">
-            <i class="fas fa-check-circle"></i> ' . $result['message'] . '
+            <i class="fas fa-check-circle"></i> ' . $result['message'] . $email_status_note . '
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>';
         // Refresh applicants list
@@ -573,9 +617,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_status'])) {
 
                                                     <div class="row">
                                                         <div class="col-md-6 mb-3">
+                                                            <label class="form-label">Campus <span class="text-danger">*</span></label>
+                                                            <select name="campus_location" class="form-control" required>
+                                                                <option value="">-- Select Campus --</option>
+                                                                <?php foreach ($campus_locations as $campus): ?>
+                                                                    <option value="<?php echo htmlspecialchars($campus); ?>"><?php echo htmlspecialchars($campus); ?></option>
+                                                                <?php endforeach; ?>
+                                                            </select>
+                                                        </div>
+                                                        <div class="col-md-6 mb-3">
                                                             <label class="form-label">Hire Date <span class="text-danger">*</span></label>
                                                             <input type="date" name="hire_date" class="form-control" value="<?php echo date('Y-m-d'); ?>" required>
                                                         </div>
+                                                    </div>
+
+                                                    <div class="row">
                                                         <div class="col-md-6 mb-3">
                                                             <label class="form-label">Salary <span class="text-danger">*</span></label>
                                                             <input type="number" name="salary" class="form-control" step="0.01" min="0" required>

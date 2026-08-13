@@ -55,12 +55,28 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['attendance_file'])) {
         if (move_uploaded_file($file['tmp_name'], $temp_file)) {
             $importer = new AttendanceImporter($conn);
 
-            // Parse file
-            $parse_result = $importer->parseCSVFile($temp_file);
+            // A real .xlsx/.xls is a binary ZIP archive (starts with the
+            // "PK" signature) - CSV, even with a .xlsx extension, is plain
+            // text and must go through the CSV parser instead.
+            $signature = file_get_contents($temp_file, false, null, 0, 2);
+            $is_real_excel = $signature === 'PK';
+
+            $parse_result = $is_real_excel
+                ? $importer->parseXlsxFile($temp_file)
+                : $importer->parseCSVFile($temp_file);
 
             if ($parse_result['success']) {
                 // Process records
                 $upload_result = $importer->processAttendanceRecords($parse_result['records']);
+
+                // parseCSVFile() does its own row-level validation (date/time
+                // format) and returns its own errors array separately from
+                // processAttendanceRecords()'s - merge them so parse-stage
+                // failures (e.g. every row rejected for a bad date format)
+                // are actually visible instead of silently discarded.
+                if (!empty($parse_result['errors'])) {
+                    $upload_result['errors'] = array_merge($parse_result['errors'], $upload_result['errors']);
+                }
 
                 if ($upload_result['success'] && $upload_result['processed'] > 0) {
                     $message = '<div class="alert alert-success alert-dismissible fade show" role="alert">
@@ -275,20 +291,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['attendance_file'])) {
                     <div class="card-body">
                         <form method="POST" enctype="multipart/form-data">
                             <div class="upload-zone" id="uploadZone">
-                                <i class="fas fa-file-csv" style="font-size: 48px; color: #C82333; margin-bottom: 15px; display: block;"></i>
-                                <h5>Drag & drop your CSV file here</h5>
-                                <p class="text-muted">or click to select</p>
+                                <i class="fas fa-file-csv" id="uploadZoneIcon" style="font-size: 48px; color: #C82333; margin-bottom: 15px; display: block;"></i>
+                                <h5 id="uploadZoneTitle">Drag & drop your CSV file here</h5>
+                                <p class="text-muted" id="uploadZoneHint">or click to select</p>
                                 <input type="file" id="fileInput" name="attendance_file" accept=".csv,.xlsx,.xls" style="display: none;">
                             </div>
 
                             <div class="info-box">
                                 <h6><i class="fas fa-info-circle"></i> File Requirements:</h6>
                                 <ul style="margin-bottom: 0; padding-left: 20px;">
-                                    <li>CSV or Excel format (.csv, .xlsx, .xls)</li>
-                                    <li>Required columns: <strong>last_name, date, check_in_time</strong></li>
-                                    <li>Optional columns: first_name, check_out_time</li>
+                                    <li>Two formats accepted, CSV or real Excel (.csv, .xlsx, .xls):
+                                        <ul style="margin: 6px 0;">
+                                            <li><strong>Simple table:</strong> columns for last_name, date, check_in_time (required), plus first_name, check_out_time (optional)</li>
+                                            <li><strong>Biometric clock export</strong> ("Attendance Log" / Enroll ID format) - uploaded exactly as exported from the fingerprint device, no conversion needed</li>
+                                        </ul>
+                                    </li>
                                     <li>Date format: YYYY-MM-DD, DD-MM-YYYY, or M/D/Y</li>
-                                    <li>Time format: HH:MM or HH:MM:SS (24-hour)</li>
+                                    <li>Time format: HH:MM or HH:MM:SS, either 24-hour (e.g. 08:00, 17:30) or 12-hour with AM/PM (e.g. 8:00 AM, 5:30 PM)</li>
                                     <li>Late arrival threshold: 09:00 AM (automatic -200 deduction per occurrence)</li>
                                     <li>Maximum file size: 5MB</li>
                                 </ul>
@@ -393,8 +412,26 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['attendance_file'])) {
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
     <script>
         const uploadZone = document.getElementById('uploadZone');
+        const uploadZoneIcon = document.getElementById('uploadZoneIcon');
+        const uploadZoneTitle = document.getElementById('uploadZoneTitle');
+        const uploadZoneHint = document.getElementById('uploadZoneHint');
         const fileInput = document.getElementById('fileInput');
         const submitBtn = document.getElementById('submitBtn');
+
+        function formatFileSize(bytes) {
+            if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
+            return (bytes / 1024).toFixed(1) + ' KB';
+        }
+
+        function showSelectedFile(file) {
+            if (!file) return;
+            uploadZoneIcon.classList.remove('fa-file-csv');
+            uploadZoneIcon.classList.add('fa-check-circle');
+            uploadZoneIcon.style.color = '#28a745';
+            uploadZoneTitle.textContent = file.name;
+            uploadZoneHint.textContent = formatFileSize(file.size) + ' selected · click to choose a different file';
+            submitBtn.style.display = 'inline-block';
+        }
 
         uploadZone.addEventListener('click', () => fileInput.click());
 
@@ -412,12 +449,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['attendance_file'])) {
             e.preventDefault();
             uploadZone.classList.remove('dragover');
             fileInput.files = e.dataTransfer.files;
-            submitBtn.style.display = 'inline-block';
+            if (fileInput.files.length > 0) {
+                showSelectedFile(fileInput.files[0]);
+            }
         });
 
         fileInput.addEventListener('change', () => {
             if (fileInput.files.length > 0) {
-                submitBtn.style.display = 'inline-block';
+                showSelectedFile(fileInput.files[0]);
             }
         });
 

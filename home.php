@@ -148,7 +148,7 @@ $jobs_result = $conn->query($jobs_query);
                     <!-- Job Card -->
                     <div class="col-12 col-sm-6 col-md-4">
                         <div class="job-card">
-                            <img src="assets/img/job-default.jpg" alt="<?php echo htmlspecialchars($job['title']); ?>" class="job-img">
+                            <img src="assets/img/job-default.svg" alt="<?php echo htmlspecialchars($job['title']); ?>" class="job-img">
                             <div class="job-content">
                                 <div class="d-flex justify-content-between align-items-start mb-3">
                                     <h6 class="job-title mb-0"><?php echo htmlspecialchars($job['title']); ?></h6>
@@ -191,7 +191,7 @@ $jobs_result = $conn->query($jobs_query);
             <!-- Benefit 1 -->
             <div class="col-12 col-sm-6 col-md-4">
                 <div class="skill-card">
-                    <img src="assets/img/skill-course1.jpg" alt="Competitive Benefits" class="skill-img">
+                    <img src="assets/img/skill-course1.svg" alt="Competitive Benefits" class="skill-img">
                     <div class="skill-content">
                         <h6 class="skill-title mb-2">Competitive Salary & Benefits</h6>
                         <div class="skill-meta">
@@ -206,7 +206,7 @@ $jobs_result = $conn->query($jobs_query);
             <!-- Benefit 2 -->
             <div class="col-12 col-sm-6 col-md-4">
                 <div class="skill-card">
-                    <img src="assets/img/skill-course2.jpg" alt="Professional Development" class="skill-img">
+                    <img src="assets/img/skill-course2.svg" alt="Professional Development" class="skill-img">
                     <div class="skill-content">
                         <h6 class="skill-title mb-2">Professional Development & Training</h6>
                         <div class="skill-meta">
@@ -221,7 +221,7 @@ $jobs_result = $conn->query($jobs_query);
             <!-- Benefit 3 -->
             <div class="col-12 col-sm-6 col-md-4">
                 <div class="skill-card">
-                    <img src="assets/img/skill-course3.jpg" alt="Work-Life Balance" class="skill-img">
+                    <img src="assets/img/skill-course3.svg" alt="Work-Life Balance" class="skill-img">
                     <div class="skill-content">
                         <h6 class="skill-title mb-2">Work-Life Balance & Flexibility</h6>
                         <div class="skill-meta">
@@ -242,7 +242,7 @@ $jobs_result = $conn->query($jobs_query);
         <div class="row align-items-center g-5">
             <!-- Left Column - Image -->
             <div class="col-12 col-lg-5">
-                <img src="assets/img/instructor-image.jpg" alt="Our Team" class="img-fluid rounded" style="border-radius: 14px; width: 100%; max-width: 400px;">
+                <img src="assets/img/instructor-image.svg" alt="Our Team" class="img-fluid rounded" style="border-radius: 14px; width: 100%; max-width: 400px;">
             </div>
 
             <!-- Right Column - Content -->
@@ -305,7 +305,7 @@ $jobs_result = $conn->query($jobs_query);
                     <!-- Testimonial 1 -->
                     <div class="testimonial-item" style="background: #FFFFFF; border-radius: 14px; padding: 30px; box-shadow: 0 5px 15px rgba(0,0,0,0.08); margin-bottom: 20px; border: 1px solid #f5f5f5;">
                         <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 15px;">
-                            <img src="assets/img/testimonial-avatar1.jpg" alt="Abdulmujeed Ismail" style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover;">
+                            <img src="assets/img/testimonial-avatar1.svg" alt="Abdulmujeed Ismail" style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover;">
                             <div>
                                 <h6 style="color: #111; font-weight: 600; margin: 0; font-size: 1rem;">Abdulmujeed Ismail</h6>
                                 <p style="color: #999; font-size: 0.85rem; margin: 0;">Senior Developer</p>
@@ -319,7 +319,7 @@ $jobs_result = $conn->query($jobs_query);
                     <!-- Testimonial 2 -->
                     <div class="testimonial-item" style="background: #FFFFFF; border-radius: 14px; padding: 30px; box-shadow: 0 5px 15px rgba(0,0,0,0.08); margin-bottom: 20px; border: 1px solid #f5f5f5;">
                         <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 15px;">
-                            <img src="assets/img/testimonial-avatar2.jpg" alt="Eze Weng" style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover;">
+                            <img src="assets/img/testimonial-avatar2.svg" alt="Eze Weng" style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover;">
                             <div>
                                 <h6 style="color: #111; font-weight: 600; margin: 0; font-size: 1rem;">Eze Weng</h6>
                                 <p style="color: #999; font-size: 0.85rem; margin: 0;">Data Analyst</p>
@@ -352,7 +352,7 @@ $jobs_result = $conn->query($jobs_query);
             <!-- HR Member 1 -->
             <div class="col-12 col-sm-6 col-md-4">
                 <div class="instructor-card">
-                    <img src="assets/img/instructor1.jpg" alt="HR Manager" class="instructor-img">
+                    <img src="assets/img/instructor1.svg" alt="HR Manager" class="instructor-img">
                     <div class="instructor-content">
                         <h6 class="instructor-name">Faisal Khan</h6>
                         <p class="instructor-title">HR Manager</p>
@@ -366,7 +366,7 @@ $jobs_result = $conn->query($jobs_query);
             <!-- HR Member 2 -->
             <div class="col-12 col-sm-6 col-md-4">
                 <div class="instructor-card">
-                    <img src="assets/img/instructor2.jpg" alt="Recruitment Specialist" class="instructor-img">
+                    <img src="assets/img/instructor2.svg" alt="Recruitment Specialist" class="instructor-img">
                     <div class="instructor-content">
                         <h6 class="instructor-name">Lora Shrof</h6>
                         <p class="instructor-title">Recruitment Specialist</p>
@@ -380,7 +380,7 @@ $jobs_result = $conn->query($jobs_query);
             <!-- HR Member 3 -->
             <div class="col-12 col-sm-6 col-md-4">
                 <div class="instructor-card">
-                    <img src="assets/img/instructor3.jpg" alt="Training Coordinator" class="instructor-img">
+                    <img src="assets/img/instructor3.svg" alt="Training Coordinator" class="instructor-img">
                     <div class="instructor-content">
                         <h6 class="instructor-name">John Smith</h6>
                         <p class="instructor-title">Training & Development</p>
@@ -394,7 +394,7 @@ $jobs_result = $conn->query($jobs_query);
             <!-- HR Member 4 -->
             <div class="col-12 col-sm-6 col-md-4">
                 <div class="instructor-card">
-                    <img src="assets/img/team-member4.jpg" alt="HR Team Member" class="instructor-img">
+                    <img src="assets/img/team-member4.svg" alt="HR Team Member" class="instructor-img">
                     <div class="instructor-content">
                         <h6 class="instructor-name">HR Team Member</h6>
                         <p class="instructor-title">HR Officer</p>
@@ -416,7 +416,7 @@ $jobs_result = $conn->query($jobs_query);
             <div class="row align-items-center g-5">
                 <!-- Left Column - Image -->
                 <div class="col-12 col-lg-5">
-                    <img src="assets/img/cta-motivation.jpg" alt="Join our team" class="img-fluid" style="border-radius: 14px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); max-width: 100%;">
+                    <img src="assets/img/cta-motivation.svg" alt="Join our team" class="img-fluid" style="border-radius: 14px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); max-width: 100%;">
                 </div>
 
                 <!-- Right Column - Content -->

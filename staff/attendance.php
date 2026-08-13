@@ -15,7 +15,7 @@ if (!isset($_SESSION['staff_id'])) {
 $staff_id = $_SESSION['staff_id'];
 
 // Get staff information
-$staff_query = $conn->prepare("SELECT id, first_name, last_name FROM staff WHERE id = ?");
+$staff_query = $conn->prepare("SELECT id, first_name, last_name, campus_location FROM staff WHERE id = ?");
 $staff_query->bind_param("i", $staff_id);
 $staff_query->execute();
 $staff = $staff_query->get_result()->fetch_assoc();
@@ -60,7 +60,49 @@ foreach ($attendance_records as $record) {
     }
 }
 
-$total_working_days = cal_days_in_month(CAL_GREGORIAN, $month, $year);
+// Working days = weekdays only (Mon-Fri), excluding public holidays that
+// apply to this staff member's campus (or all campuses). Saturdays,
+// Sundays, and public holidays are not working days and are excluded
+// from the total.
+function countWeekdaysInMonth($month, $year, $conn = null, $campus_location = null)
+{
+    $start = new DateTime(sprintf('%04d-%02d-01', $year, $month));
+    $end = (clone $start)->modify('last day of this month')->modify('+1 day');
+    $period = new DatePeriod($start, new DateInterval('P1D'), $end);
+
+    $holidays = [];
+    if ($conn) {
+        $range_start = $start->format('Y-m-d');
+        $range_end = (clone $end)->modify('-1 day')->format('Y-m-d');
+        $sql = "SELECT holiday_date FROM public_holidays WHERE holiday_date BETWEEN ? AND ? AND (campus_location IS NULL";
+        $types = 'ss';
+        $params = [$range_start, $range_end];
+        if (!empty($campus_location)) {
+            $sql .= " OR campus_location = ?";
+            $types .= 's';
+            $params[] = $campus_location;
+        }
+        $sql .= ")";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        while ($row = $result->fetch_assoc()) {
+            $holidays[] = $row['holiday_date'];
+        }
+    }
+
+    $count = 0;
+    foreach ($period as $date) {
+        $d = $date->format('Y-m-d');
+        if ((int) $date->format('N') < 6 && !in_array($d, $holidays, true)) {
+            $count++;
+        }
+    }
+    return $count;
+}
+
+$total_working_days = countWeekdaysInMonth($month, $year, $conn, $staff['campus_location'] ?? null);
 
 // Check if time_in is late (after 8:45 AM)
 function isLateTimeIn($time_in)
@@ -491,6 +533,12 @@ function isLateTimeIn($time_in)
                 </a>
             </li>
             <li style="border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 15px; margin-top: 10px;">
+                <a href="handbook.php">
+                    <i class="fas fa-book"></i>
+                    <span>Staff Handbook</span>
+                </a>
+            </li>
+            <li>
                 <a href="request-permission.php">
                     <i class="fas fa-clipboard-check"></i>
                     <span>Request Permission</span>

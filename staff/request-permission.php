@@ -422,6 +422,12 @@ $leave_types = $leaveManager->getAvailableLeaveTypesForStaff($staff_id);
                 </a>
             </li>
             <li style="border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 15px; margin-top: 10px;">
+                <a href="handbook.php">
+                    <i class="fas fa-book"></i>
+                    <span>Staff Handbook</span>
+                </a>
+            </li>
+            <li>
                 <a href="request-permission.php" class="active">
                     <i class="fas fa-clipboard-check"></i>
                     <span>Request Permission</span>

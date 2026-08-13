@@ -790,13 +790,22 @@ unset($req);
                                 <div class="detail-label">Request Date</div>
                                 <div class="detail-value"><?php echo date('M d, Y', strtotime($req['request_date'])); ?></div>
                             </div>
+                            <?php
+                            // When "All Types" is selected the rows come from a UNION, which takes
+                            // its column names from the first SELECT (late arrival). The start and
+                            // end times therefore arrive as late_arrival_time / second_time. When
+                            // filtering by Temporary Exit alone the query runs on its own and the
+                            // names are start_time / end_time.
+                            $exit_start = $req['start_time'] ?? $req['late_arrival_time'] ?? null;
+                            $exit_end   = $req['end_time']   ?? $req['second_time']      ?? null;
+                            ?>
                             <div class="detail-item">
                                 <div class="detail-label">Start Time</div>
-                                <div class="detail-value"><?php echo date('h:i A', strtotime($req['start_time'])); ?></div>
+                                <div class="detail-value"><?php echo $exit_start ? date('h:i A', strtotime($exit_start)) : '-'; ?></div>
                             </div>
                             <div class="detail-item">
                                 <div class="detail-label">End Time</div>
-                                <div class="detail-value"><?php echo date('h:i A', strtotime($req['end_time'])); ?></div>
+                                <div class="detail-value"><?php echo $exit_end ? date('h:i A', strtotime($exit_end)) : '-'; ?></div>
                             </div>
                             <div class="detail-item">
                                 <div class="detail-label">Reason</div>

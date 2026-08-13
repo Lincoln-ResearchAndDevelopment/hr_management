@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        * {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        body {
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #C82333 0%, #a01c28 100%);
+            color: #ffffff;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+        .content {
+            padding: 30px;
+            color: #333333;
+        }
+        .content p {
+            line-height: 1.6;
+            margin: 15px 0;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-weight: 600;
+            background-color: {{statusColor}};
+            color: #ffffff;
+            margin: 10px 0;
+        }
+        .application-details {
+            background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+            border-left: 4px solid #C82333;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        .detail-label {
+            font-weight: 600;
+            color: #495057;
+        }
+        .detail-value {
+            color: #212529;
+            text-align: right;
+        }
+        .footer {
+            background-color: #f8f9fa;
+            padding: 20px;
+            text-align: center;
+            color: #666666;
+            font-size: 12px;
+        }
+        .footer p {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📋 Application Update</h1>
+        </div>
+
+        <div class="content">
+            <p>Hi {{applicantName}},</p>
+
+            <p>There's an update on your application for <strong>{{jobTitle}}</strong> at <strong>{{company}}</strong>.</p>
+
+            <div class="application-details">
+                <div class="detail-row">
+                    <span class="detail-label">Status:</span>
+                    <span class="detail-value"><span class="status-badge">{{statusLabel}}</span></span>
+                </div>
+            </div>
+
+            <p>{{statusMessage}}</p>
+
+            <p>If you have any questions, feel free to reach out to us.</p>
+
+            <p>Best regards,<br>
+            <strong>Lincoln HR System Team</strong></p>
+        </div>
+
+        <div class="footer">
+            <p>&copy; 2026 Lincoln University College. All rights reserved.</p>
+            <p>This is an automated email, please do not reply directly.</p>
+        </div>
+    </div>
+</body>
+</html>

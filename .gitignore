@@ -1,0 +1,17 @@
+# Runtime-generated uploads - not source code, shouldn't be versioned
+assets/uploads/attendance/*
+!assets/uploads/attendance/.gitkeep
+assets/uploads/certificates/*
+!assets/uploads/certificates/.gitkeep
+assets/uploads/documents/*
+!assets/uploads/documents/.gitkeep
+assets/uploads/profiles/*
+!assets/uploads/profiles/.gitkeep
+uploads/contracts/*
+!uploads/contracts/.gitkeep
+uploads/handbook/*
+!uploads/handbook/.gitkeep
+
+# OS/editor cruft
+Thumbs.db
+.DS_Store

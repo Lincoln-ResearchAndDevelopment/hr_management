@@ -338,7 +338,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         @media (min-width: 1024px) {
             .login-right {
                 display: block;
-                background-image: url('assets/img/login-bg.jpg');
+                background-image: url('assets/img/login-bg.svg');
             }
         }
 

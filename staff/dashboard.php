@@ -20,7 +20,7 @@ $leaveManager = new LeaveManager($conn);
 
 // Get staff information
 $staff_query = $conn->prepare(
-    "SELECT id, first_name, last_name, email, position, department, hire_date, salary FROM staff WHERE id = ?"
+    "SELECT id, first_name, last_name, email, lincoln_email, position, department, hire_date, salary FROM staff WHERE id = ?"
 );
 $staff_query->bind_param("i", $staff_id);
 $staff_query->execute();
@@ -281,9 +281,15 @@ if ($hour < 12) {
 
         .stats-section {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(5, 1fr);
             gap: 20px;
             margin-bottom: 30px;
+        }
+
+        @media (max-width: 1200px) {
+            .stats-section {
+                grid-template-columns: repeat(3, 1fr);
+            }
         }
 
         .stat-card {
@@ -322,6 +328,11 @@ if ($hour < 12) {
         .stat-label {
             color: #666;
             font-size: 0.95rem;
+        }
+
+        .stat-number.stat-number-email {
+            font-size: 0.85rem;
+            font-weight: 600;
         }
 
         .section-title {
@@ -739,6 +750,12 @@ if ($hour < 12) {
                 </a>
             </li>
             <li style="border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 15px; margin-top: 10px;">
+                <a href="handbook.php">
+                    <i class="fas fa-book"></i>
+                    <span>Staff Handbook</span>
+                </a>
+            </li>
+            <li>
                 <a href="request-permission.php">
                     <i class="fas fa-clipboard-check"></i>
                     <span>Request Permission</span>
@@ -855,7 +872,7 @@ if ($hour < 12) {
                 <div class="stat-icon">
                     <i class="fas fa-envelope"></i>
                 </div>
-                <div class="stat-number"><?php echo htmlspecialchars($staff['email']); ?></div>
+                <div class="stat-number stat-number-email"><?php echo htmlspecialchars($staff['lincoln_email'] ?: $staff['email']); ?></div>
                 <div class="stat-label">Email</div>
             </div>
         </div>

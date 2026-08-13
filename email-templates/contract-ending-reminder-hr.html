@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contract Ending Reminder</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #C82333 0%, #a01c28 100%);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 22px;
+            font-weight: 600;
+        }
+        .content {
+            padding: 30px 25px;
+            color: #333;
+        }
+        .content p {
+            margin: 0 0 15px 0;
+            line-height: 1.6;
+        }
+        .info-box {
+            background-color: #f9f9f9;
+            border-left: 4px solid #C82333;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .info-box p {
+            margin: 6px 0;
+        }
+        .footer {
+            background-color: #f5f5f5;
+            padding: 15px 25px;
+            border-top: 1px solid #e0e0e0;
+            font-size: 12px;
+            color: #666;
+            text-align: center;
+        }
+        .button {
+            display: inline-block;
+            background: linear-gradient(135deg, #C82333 0%, #a01c28 100%);
+            color: white;
+            padding: 10px 22px;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        .button:hover {
+            color: white;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Contract Ending Reminder</h1>
+        </div>
+        <div class="content">
+            <p>Dear HR Team,</p>
+            <p>The contract of <strong>{{staffName}}</strong> will be {{statusText}}. Please review the details below and renew the contract if the staff member is continuing.</p>
+
+            <div class="info-box">
+                <p><strong>Position:</strong> {{position}}</p>
+                <p><strong>Department:</strong> {{department}}</p>
+                <p><strong>Contract Start Date:</strong> {{contractStartDate}}</p>
+                <p><strong>Contract End Date:</strong> {{contractEndDate}}</p>
+            </div>
+
+            <p>This reminder will keep repeating each day until the contract is renewed in the HR dashboard.</p>
+
+            <p style="margin-top: 20px;">
+                <a href="{{dashboardUrl}}" class="button">Renew from HR Dashboard</a>
+            </p>
+        </div>
+        <div class="footer">
+            Lincoln University College HR System
+        </div>
+    </div>
+</body>
+</html>

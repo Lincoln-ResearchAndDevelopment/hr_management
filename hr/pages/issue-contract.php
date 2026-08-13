@@ -302,7 +302,28 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $stmt->close();
             }
 
+            // Sync contract dates to the matching staff record (matched by
+            // email or Lincoln email), so the "Contracts Ending Soon"
+            // reminder on the HR dashboard automatically picks this up.
+            // Not every contract is necessarily for an existing staff
+            // record (e.g. issued before hiring), so no match is not an
+            // error - it just means nothing to sync yet.
+            $staff_synced = false;
+            $sync_stmt = $conn->prepare(
+                "UPDATE staff SET contract_start_date = ?, contract_end_date = ?
+                 WHERE (email = ? OR lincoln_email = ?) AND status = 'active'"
+            );
+            if ($sync_stmt) {
+                $sync_stmt->bind_param('ssss', $contract_start, $contract_end, $staff_email, $staff_email);
+                $sync_stmt->execute();
+                $staff_synced = $sync_stmt->affected_rows > 0;
+                $sync_stmt->close();
+            }
+
             $success_message = 'Contract issued and saved successfully as: ' . $output_filename;
+            $success_message .= $staff_synced
+                ? ' Contract dates were also updated on the matching staff record.'
+                : ' No matching active staff record found by email, so contract dates were not linked to a staff profile.';
             $generated_contract_url = '../../uploads/contracts/' . rawurlencode($output_filename);
         } catch (Throwable $e) {
             $error_message = 'Error generating contract: ' . $e->getMessage();
@@ -323,7 +344,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link href="../assets/css/style.css" rel="stylesheet">
+    <link href="../../assets/css/style.css" rel="stylesheet">
     <style>
         * {
             font-family: 'Poppins', sans-serif;
@@ -430,8 +451,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 <label for="template_type" class="form-label">Contract Template <span class="text-danger">*</span></label>
                 <select class="form-select" id="template_type" name="template_type" required>
                     <option value="">-- Select Template --</option>
-                    <option value="gombe">Gombe Template</option>
-                    <option value="abuja">Abuja Template</option>
+                    <option value="gombe">Lincoln University, Kumo Campus Template</option>
+                    <option value="abuja">Lincoln College, Abuja Campus Template</option>
                 </select>
                 <small class="text-muted">Select the location-specific contract template</small>
             </div>
@@ -465,8 +486,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 <label for="campus" class="form-label">Campus <span class="text-danger">*</span></label>
                 <select class="form-select" id="campus" name="campus" required>
                     <option value="">-- Select Campus --</option>
-                    <option value="Gombe">Gombe</option>
-                    <option value="Abuja">Abuja</option>
+                    <option value="Lincoln University, Kumo Campus">Lincoln University, Kumo Campus</option>
+                    <option value="Lincoln College, Abuja Campus">Lincoln College, Abuja Campus</option>
+                    <option value="Lincoln University, NSUK Campus">Lincoln University, NSUK Campus</option>
                     <option value="Main">Main</option>
                     <option value="Satellite">Satellite</option>
                 </select>
@@ -512,8 +534,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         <label for="campusFilter" class="form-label">Filter by Campus</label>
                         <select class="form-select" id="campusFilter">
                             <option value="">-- All Campuses --</option>
-                            <option value="Gombe">Gombe</option>
-                            <option value="Abuja">Abuja</option>
+                            <option value="Lincoln University, Kumo Campus">Lincoln University, Kumo Campus</option>
+                            <option value="Lincoln College, Abuja Campus">Lincoln College, Abuja Campus</option>
+                            <option value="Lincoln University, NSUK Campus">Lincoln University, NSUK Campus</option>
                             <option value="Main">Main</option>
                             <option value="Satellite">Satellite</option>
                         </select>

@@ -61,16 +61,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_password'])) {
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>';
     } else {
-        // Verify current password
-        $user_check = $conn->prepare("SELECT password FROM users WHERE id = (SELECT user_id FROM staff WHERE id = ?)");
-        $user_check->bind_param("i", $staff_id);
-        $user_check->execute();
-        $user_result = $user_check->get_result()->fetch_assoc();
+        // Verify current password against the staff record itself. This is what
+        // staff/login.php actually authenticates against — staff are not
+        // guaranteed to have a linked users row (staff hired by accepting a job
+        // application never get one), so checking through that link fails even
+        // when the current password is correct.
+        $staff_check = $conn->prepare("SELECT password FROM staff WHERE id = ?");
+        $staff_check->bind_param("i", $staff_id);
+        $staff_check->execute();
+        $staff_result = $staff_check->get_result()->fetch_assoc();
 
-        if ($user_result && password_verify($current_password, $user_result['password'])) {
+        if ($staff_result && $staff_result['password'] && password_verify($current_password, $staff_result['password'])) {
             // Update password
             $hashed_password = password_hash($new_password, PASSWORD_BCRYPT);
-            $update_password = $conn->prepare("UPDATE users SET password = ? WHERE id = (SELECT user_id FROM staff WHERE id = ?)");
+            $update_password = $conn->prepare("UPDATE staff SET password = ? WHERE id = ?");
             $update_password->bind_param("si", $hashed_password, $staff_id);
 
             if ($update_password->execute()) {
@@ -458,6 +462,12 @@ if (!$staff) {
                 </a>
             </li>
             <li style="border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 15px; margin-top: 10px;">
+                <a href="handbook.php">
+                    <i class="fas fa-book"></i>
+                    <span>Staff Handbook</span>
+                </a>
+            </li>
+            <li>
                 <a href="request-permission.php">
                     <i class="fas fa-clipboard-check"></i>
                     <span>Request Permission</span>
@@ -549,7 +559,8 @@ if (!$staff) {
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label">Email Address</label>
+                    <label class="form-label">Personal Email Address</label>
+                    <small class="text-muted d-block mb-1">Your Lincoln login email is shown under Additional Information below and can't be changed here.</small>
                     <input type="email" class="form-control" name="email" value="<?php echo htmlspecialchars($staff['email']); ?>" required>
                 </div>
 
@@ -590,6 +601,10 @@ if (!$staff) {
         <!-- Additional Information -->
         <div class="info-section">
             <h3 style="margin-bottom: 20px; font-weight: 700;">Additional Information</h3>
+            <div class="info-row">
+                <span class="info-label">Lincoln Email (Login)</span>
+                <span class="info-value"><?php echo htmlspecialchars($staff['lincoln_email'] ?? 'Not assigned'); ?></span>
+            </div>
             <div class="info-row">
                 <span class="info-label">Position</span>
                 <span class="info-value"><?php echo htmlspecialchars($staff['position']); ?></span>

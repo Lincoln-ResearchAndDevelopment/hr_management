@@ -34,6 +34,18 @@ $user_info = $user ?? null;
             </a>
         </li>
         <li>
+            <a href="manage-handbook.php" class="<?php echo $current_page === 'manage-handbook.php' ? 'active' : ''; ?>">
+                <i class="fas fa-book"></i>
+                <span>Staff Handbook</span>
+            </a>
+        </li>
+        <li>
+            <a href="manage-holidays.php" class="<?php echo $current_page === 'manage-holidays.php' ? 'active' : ''; ?>">
+                <i class="fas fa-umbrella-beach"></i>
+                <span>Public Holidays</span>
+            </a>
+        </li>
+        <li>
             <a href="applicants.php" class="<?php echo $current_page === 'applicants.php' ? 'active' : ''; ?>">
                 <i class="fas fa-users"></i>
                 <span>Applicants</span>
@@ -106,7 +118,7 @@ $user_info = $user ?? null;
             </a>
         </li>
         <li style="margin-top: auto; border-top: 1px solid rgba(255, 255, 255, 0.2); padding-top: 20px;">
-            <a href="logout.php" style="color: #ff9999;">
+            <a href="../logout.php" style="color: #ff9999;">
                 <i class="fas fa-sign-out-alt"></i>
                 <span>Logout</span>
             </a>

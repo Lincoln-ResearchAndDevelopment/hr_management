@@ -29,42 +29,28 @@ if (!$staff) {
     exit;
 }
 
-// Handle attendance response
+// Handle attendance response. Staff can only toggle between 'scheduled'
+// (attending) and 'excused' (declined) - 'attended'/'absent' are set by HR
+// after the training happens, not by the staff member.
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $training_id = (int)$_POST['training_id'];
     $response = $_POST['response'] ?? '';
     $decline_reason = $_POST['decline_reason'] ?? '';
 
-    if (empty($response) || !in_array($response, ['accepted', 'declined'])) {
+    if (!in_array($response, ['accepted', 'declined'], true)) {
         $message = 'Invalid response.';
         $message_type = 'danger';
     } else {
-        // Check if attendance record exists
-        $check_query = $conn->prepare(
-            "SELECT id FROM training_attendance WHERE training_id = ? AND staff_id = ?"
-        );
-        $check_query->bind_param("ii", $training_id, $staff_id);
-        $check_query->execute();
-        $exists = $check_query->get_result()->fetch_assoc();
+        $new_status = $response === 'declined' ? 'excused' : 'scheduled';
+        $reason_value = $response === 'declined' ? $decline_reason : null;
 
-        if ($exists) {
-            // Update existing
-            $update_query = $conn->prepare(
-                "UPDATE training_attendance 
-                 SET status = ?, decline_reason = ?, updated_at = NOW()
-                 WHERE training_id = ? AND staff_id = ?"
-            );
-            $update_query->bind_param("ssii", $response, $decline_reason, $training_id, $staff_id);
-            $result = $update_query->execute();
-        } else {
-            // Insert new
-            $insert_query = $conn->prepare(
-                "INSERT INTO training_attendance (training_id, staff_id, status, decline_reason)
-                 VALUES (?, ?, ?, ?)"
-            );
-            $insert_query->bind_param("iiss", $training_id, $staff_id, $response, $decline_reason);
-            $result = $insert_query->execute();
-        }
+        $update_query = $conn->prepare(
+            "UPDATE staff_training_attendees
+             SET attendance_status = ?, decline_reason = ?, updated_at = NOW()
+             WHERE training_id = ? AND staff_id = ?"
+        );
+        $update_query->bind_param("ssii", $new_status, $reason_value, $training_id, $staff_id);
+        $result = $update_query->execute();
 
         if ($result) {
             $message = 'Your response has been recorded.';
@@ -76,31 +62,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Get all training programs
+// Get upcoming trainings this staff member is scheduled for
 $training_query = $conn->prepare(
-    "SELECT tp.*, 
-            CASE WHEN ta.status IS NULL THEN 'pending' ELSE ta.status END as attendance_status
-     FROM training_programs tp
-     LEFT JOIN training_attendance ta ON tp.id = ta.training_id AND ta.staff_id = ?
-     WHERE tp.training_date >= CURDATE()
-     ORDER BY tp.training_date ASC, tp.training_time ASC"
+    "SELECT st.*, sta.attendance_status, sta.decline_reason
+     FROM staff_trainings st
+     JOIN staff_training_attendees sta ON sta.training_id = st.id AND sta.staff_id = ?
+     WHERE st.training_date >= CURDATE()
+     ORDER BY st.training_date ASC, st.training_time ASC"
 );
 $training_query->bind_param("i", $staff_id);
 $training_query->execute();
 $trainings = $training_query->get_result()->fetch_all(MYSQLI_ASSOC);
 
-// Get past trainings
+// Get past trainings this staff member was scheduled for
 $past_training_query = $conn->prepare(
-    "SELECT tp.*, 
-            CASE WHEN ta.status IS NULL THEN 'pending' ELSE ta.status END as attendance_status
-     FROM training_programs tp
-     LEFT JOIN training_attendance ta ON tp.id = ta.training_id AND ta.staff_id = ?
-     WHERE tp.training_date < CURDATE()
-     ORDER BY tp.training_date DESC, tp.training_time DESC"
+    "SELECT st.*, sta.attendance_status, sta.decline_reason
+     FROM staff_trainings st
+     JOIN staff_training_attendees sta ON sta.training_id = st.id AND sta.staff_id = ?
+     WHERE st.training_date < CURDATE()
+     ORDER BY st.training_date DESC, st.training_time DESC"
 );
 $past_training_query->bind_param("i", $staff_id);
 $past_training_query->execute();
 $past_trainings = $past_training_query->get_result()->fetch_all(MYSQLI_ASSOC);
+
+function trainingStatusLabel($status)
+{
+    $labels = [
+        'scheduled' => 'Scheduled',
+        'excused'   => 'Declined',
+        'attended'  => 'Attended',
+        'absent'    => 'Absent',
+    ];
+    return $labels[$status] ?? ucfirst($status);
+}
 
 ?>
 <!DOCTYPE html>
@@ -365,19 +360,24 @@ $past_trainings = $past_training_query->get_result()->fetch_all(MYSQLI_ASSOC);
             font-weight: 600;
         }
 
-        .status-pending {
-            background-color: #fff3cd;
-            color: #856404;
+        .status-scheduled {
+            background-color: #d1ecf1;
+            color: #0c5460;
         }
 
-        .status-accepted {
+        .status-excused {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .status-attended {
             background-color: #d4edda;
             color: #155724;
         }
 
-        .status-declined {
-            background-color: #f8d7da;
-            color: #721c24;
+        .status-absent {
+            background-color: #e2e3e5;
+            color: #383d41;
         }
 
         .action-buttons {
@@ -560,6 +560,12 @@ $past_trainings = $past_training_query->get_result()->fetch_all(MYSQLI_ASSOC);
                 </a>
             </li>
             <li style="border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 15px; margin-top: 10px;">
+                <a href="handbook.php">
+                    <i class="fas fa-book"></i>
+                    <span>Staff Handbook</span>
+                </a>
+            </li>
+            <li>
                 <a href="request-permission.php">
                     <i class="fas fa-clipboard-check"></i>
                     <span>Request Permission</span>
@@ -655,8 +661,8 @@ $past_trainings = $past_training_query->get_result()->fetch_all(MYSQLI_ASSOC);
                                 <i class="fas fa-tag"></i> <?php echo htmlspecialchars($training['training_type']); ?>
                             </span>
                         </div>
-                        <span class="status-badge status-<?php echo $training['attendance_status']; ?>">
-                            <?php echo ucfirst(str_replace('_', ' ', $training['attendance_status'])); ?>
+                        <span class="status-badge status-<?php echo htmlspecialchars($training['attendance_status']); ?>">
+                            <?php echo trainingStatusLabel($training['attendance_status']); ?>
                         </span>
                     </div>
 
@@ -670,9 +676,21 @@ $past_trainings = $past_training_query->get_result()->fetch_all(MYSQLI_ASSOC);
                             <?php echo date('h:i A', strtotime($training['training_time'])); ?>
                         </div>
                         <div class="detail-item">
-                            <strong><i class="fas fa-map-marker-alt"></i> Location:</strong><br>
-                            <?php echo htmlspecialchars($training['location'] ?? 'TBD'); ?>
+                            <strong><i class="fas fa-map-marker-alt"></i> Venue:</strong><br>
+                            <?php echo htmlspecialchars($training['venue'] ?? 'TBD'); ?>
                         </div>
+                        <?php if (!empty($training['trainer_name'])): ?>
+                            <div class="detail-item">
+                                <strong><i class="fas fa-chalkboard-teacher"></i> Trainer:</strong><br>
+                                <?php echo htmlspecialchars($training['trainer_name']); ?>
+                            </div>
+                        <?php endif; ?>
+                        <?php if ($training['is_mandatory']): ?>
+                            <div class="detail-item">
+                                <strong><i class="fas fa-exclamation-circle"></i> Attendance:</strong><br>
+                                Mandatory
+                            </div>
+                        <?php endif; ?>
                     </div>
 
                     <?php if (!empty($training['description'])): ?>
@@ -682,22 +700,20 @@ $past_trainings = $past_training_query->get_result()->fetch_all(MYSQLI_ASSOC);
                         </div>
                     <?php endif; ?>
 
-                    <?php if ($training['attendance_status'] === 'pending'): ?>
+                    <?php if ($training['attendance_status'] === 'scheduled'): ?>
+                        <div class="action-buttons">
+                            <button class="btn btn-decline" onclick="openDeclineModal(<?php echo $training['id']; ?>)">
+                                <i class="fas fa-times"></i> Can't Attend
+                            </button>
+                        </div>
+                    <?php elseif ($training['attendance_status'] === 'excused'): ?>
+                        <div style="padding: 15px; background: #fff3cd; border-radius: 8px; color: #856404;">
+                            <strong><i class="fas fa-info-circle"></i> You declined this training<?php echo !empty($training['decline_reason']) ? ': ' . htmlspecialchars($training['decline_reason']) : '.'; ?></strong>
+                        </div>
                         <div class="action-buttons">
                             <button class="btn btn-accept" onclick="respondToTraining(<?php echo $training['id']; ?>, 'accepted')">
-                                <i class="fas fa-check"></i> I Will Attend
+                                <i class="fas fa-check"></i> I Can Attend After All
                             </button>
-                            <button class="btn btn-decline" onclick="openDeclineModal(<?php echo $training['id']; ?>)">
-                                <i class="fas fa-times"></i> Decline
-                            </button>
-                        </div>
-                    <?php elseif ($training['attendance_status'] === 'declined'): ?>
-                        <div style="padding: 15px; background: #fff3cd; border-radius: 8px; color: #856404;">
-                            <strong><i class="fas fa-info-circle"></i> You have declined this training.</strong>
-                        </div>
-                    <?php else: ?>
-                        <div style="padding: 15px; background: #d4edda; border-radius: 8px; color: #155724;">
-                            <strong><i class="fas fa-check-circle"></i> You have accepted this training.</strong>
                         </div>
                     <?php endif; ?>
                 </div>
@@ -727,8 +743,8 @@ $past_trainings = $past_training_query->get_result()->fetch_all(MYSQLI_ASSOC);
                                 <i class="fas fa-tag"></i> <?php echo htmlspecialchars($training['training_type']); ?>
                             </span>
                         </div>
-                        <span class="status-badge status-<?php echo $training['attendance_status']; ?>">
-                            <?php echo ucfirst(str_replace('_', ' ', $training['attendance_status'])); ?>
+                        <span class="status-badge status-<?php echo htmlspecialchars($training['attendance_status']); ?>">
+                            <?php echo trainingStatusLabel($training['attendance_status']); ?>
                         </span>
                     </div>
 
@@ -742,8 +758,8 @@ $past_trainings = $past_training_query->get_result()->fetch_all(MYSQLI_ASSOC);
                             <?php echo date('h:i A', strtotime($training['training_time'])); ?>
                         </div>
                         <div class="detail-item">
-                            <strong><i class="fas fa-map-marker-alt"></i> Location:</strong><br>
-                            <?php echo htmlspecialchars($training['location'] ?? 'TBD'); ?>
+                            <strong><i class="fas fa-map-marker-alt"></i> Venue:</strong><br>
+                            <?php echo htmlspecialchars($training['venue'] ?? 'TBD'); ?>
                         </div>
                     </div>
                 </div>

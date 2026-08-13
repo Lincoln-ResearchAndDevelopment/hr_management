@@ -17,6 +17,39 @@ if (!$hr_auth->isHRLoggedIn()) {
 // Get current HR user information
 $user = $hr_auth->getCurrentHR();
 
+// Handle contract renewal (extends contract_end_date, clearing it from the
+// "ending soon" reminder list below)
+$renewal_message = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['renew_contract'])) {
+    $renew_staff_id = (int) ($_POST['staff_id'] ?? 0);
+    $new_end_date = trim($_POST['new_contract_end_date'] ?? '');
+
+    if ($renew_staff_id > 0 && !empty($new_end_date)) {
+        $renew_stmt = $conn->prepare("UPDATE staff SET contract_end_date = ? WHERE id = ?");
+        $renew_stmt->bind_param("si", $new_end_date, $renew_staff_id);
+        if ($renew_stmt->execute()) {
+            $renewal_message = '<div class="alert alert-success alert-dismissible fade show" role="alert" style="margin-bottom: 20px;">
+                <i class="fas fa-check-circle"></i> Contract renewed successfully - new end date: ' . htmlspecialchars($new_end_date) . '
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>';
+        }
+    }
+}
+
+// Contracts ending within 30 days (or already past due and not yet
+// renewed) - HR should keep seeing this reminder every time they load the
+// dashboard until the contract is renewed (end date pushed out again).
+$contract_alerts_query = $conn->query(
+    "SELECT id, first_name, last_name, position, department, contract_end_date,
+            DATEDIFF(contract_end_date, CURDATE()) AS days_remaining
+     FROM staff
+     WHERE status = 'active'
+       AND contract_end_date IS NOT NULL
+       AND contract_end_date <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)
+     ORDER BY contract_end_date ASC"
+);
+$contract_alerts = $contract_alerts_query ? $contract_alerts_query->fetch_all(MYSQLI_ASSOC) : [];
+
 // Get stats for dashboard
 $hr_jobs = $hr_manager->getHRJobs($user['id']);
 $total_jobs = count($hr_jobs);
@@ -32,6 +65,10 @@ $applicants_query->bind_param("i", $user['id']);
 $applicants_query->execute();
 $applicants_result = $applicants_query->get_result()->fetch_assoc();
 $total_applicants = $applicants_result['total'] ?? 0;
+
+// Total handbooks uploaded
+$handbook_count_result = $conn->query("SELECT COUNT(*) as total FROM staff_handbook");
+$total_handbooks = $handbook_count_result ? ($handbook_count_result->fetch_assoc()['total'] ?? 0) : 0;
 
 // Get upcoming interviews for this HR's jobs
 $upcoming_interviews_query = $conn->prepare(
@@ -266,15 +303,15 @@ $upcoming_interviews = $upcoming_interviews_query->get_result()->fetch_all(MYSQL
         /* Dashboard Stats */
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
             margin-bottom: 40px;
         }
 
         .stat-card {
             background: #fff;
             border-radius: 12px;
-            padding: 25px;
+            padding: 16px;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
             border-left: 4px solid #C82333;
             transition: all 0.3s ease;
@@ -286,27 +323,27 @@ $upcoming_interviews = $upcoming_interviews_query->get_result()->fetch_all(MYSQL
         }
 
         .stat-icon {
-            width: 50px;
-            height: 50px;
+            width: 36px;
+            height: 36px;
             background: linear-gradient(135deg, #C82333 0%, #a01c28 100%);
-            border-radius: 10px;
+            border-radius: 8px;
             display: flex;
             align-items: center;
             justify-content: center;
             color: #fff;
-            font-size: 1.5rem;
-            margin-bottom: 15px;
+            font-size: 1.05rem;
+            margin-bottom: 10px;
         }
 
         .stat-label {
-            font-size: 0.95rem;
+            font-size: 0.8rem;
             color: #999;
             font-weight: 500;
-            margin-bottom: 5px;
+            margin-bottom: 4px;
         }
 
         .stat-value {
-            font-size: 2rem;
+            font-size: 1.5rem;
             font-weight: 700;
             color: #333;
         }
@@ -423,6 +460,18 @@ $upcoming_interviews = $upcoming_interviews_query->get_result()->fetch_all(MYSQL
                 </a>
             </li>
             <li>
+                <a href="pages/manage-handbook.php">
+                    <i class="fas fa-book"></i>
+                    <span>Staff Handbook</span>
+                </a>
+            </li>
+            <li>
+                <a href="pages/manage-holidays.php">
+                    <i class="fas fa-umbrella-beach"></i>
+                    <span>Public Holidays</span>
+                </a>
+            </li>
+            <li>
                 <a href="pages/applicants.php">
                     <i class="fas fa-users"></i>
                     <span>Applicants</span>
@@ -495,7 +544,7 @@ $upcoming_interviews = $upcoming_interviews_query->get_result()->fetch_all(MYSQL
                 </a>
             </li>
             <li style="margin-top: auto; border-top: 1px solid rgba(255, 255, 255, 0.2); padding-top: 20px;">
-                <a href="../logout.php" style="color: #ff6b6b;">
+                <a href="logout.php" style="color: #ff6b6b;">
                     <i class="fas fa-sign-out-alt"></i>
                     <span>Logout</span>
                 </a>
@@ -535,6 +584,66 @@ $upcoming_interviews = $upcoming_interviews_query->get_result()->fetch_all(MYSQL
             <p style="margin: 0; opacity: 0.9;">Manage your job postings and track applicants</p>
         </div>
 
+        <?php echo $renewal_message; ?>
+
+        <!-- Contracts Ending Soon -->
+        <?php if (!empty($contract_alerts)): ?>
+            <div style="background: #fff; border: 1px solid #f5c2c7; border-left: 4px solid #C82333; border-radius: 12px; padding: 22px 26px; margin-bottom: 30px;">
+                <h3 style="margin: 0 0 16px; font-size: 1.1rem; font-weight: 700; color: #842029; display: flex; align-items: center; gap: 10px;">
+                    <i class="fas fa-triangle-exclamation"></i> Contracts Ending Soon
+                </h3>
+                <?php foreach ($contract_alerts as $alert): ?>
+                    <?php
+                    $days = (int) $alert['days_remaining'];
+                    $staff_name = htmlspecialchars($alert['first_name'] . ' ' . $alert['last_name']);
+                    $end_date_fmt = date('F d, Y', strtotime($alert['contract_end_date']));
+                    if ($days < 0) {
+                        $status_text = 'terminated ' . abs($days) . ' day' . (abs($days) === 1 ? '' : 's') . ' ago - contract has ended';
+                    } elseif ($days === 0) {
+                        $status_text = 'terminated today';
+                    } else {
+                        $status_text = 'terminated in ' . $days . ' day' . ($days === 1 ? '' : 's');
+                    }
+                    ?>
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 12px 0; border-bottom: 1px solid #f5f5f5;">
+                        <div>
+                            The contract of <strong><?php echo $staff_name; ?></strong>
+                            (<?php echo htmlspecialchars($alert['position']); ?><?php echo !empty($alert['department']) ? ', ' . htmlspecialchars($alert['department']) : ''; ?>)
+                            will be <strong><?php echo $status_text; ?></strong>
+                            <small style="color: #6c757d;">(ends <?php echo $end_date_fmt; ?>)</small>
+                        </div>
+                        <button type="button" class="btn btn-sm" style="background: #C82333; color: #fff; white-space: nowrap; border: none; padding: 8px 16px; border-radius: 6px;" data-bs-toggle="modal" data-bs-target="#renewModal<?php echo $alert['id']; ?>">
+                            <i class="fas fa-rotate"></i> Renew Contract
+                        </button>
+                    </div>
+
+                    <div class="modal fade" id="renewModal<?php echo $alert['id']; ?>" tabindex="-1">
+                        <div class="modal-dialog modal-dialog-centered">
+                            <div class="modal-content">
+                                <form method="POST" action="">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title">Renew Contract - <?php echo $staff_name; ?></h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <input type="hidden" name="staff_id" value="<?php echo $alert['id']; ?>">
+                                        <label class="form-label">New Contract End Date <span class="text-danger">*</span></label>
+                                        <input type="date" class="form-control" name="new_contract_end_date" min="<?php echo date('Y-m-d'); ?>" required>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                        <button type="submit" name="renew_contract" class="btn btn-success">
+                                            <i class="fas fa-check"></i> Confirm Renewal
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+
         <!-- Dashboard Stats -->
         <div class="stats-grid">
             <div class="stat-card">
@@ -559,6 +668,14 @@ $upcoming_interviews = $upcoming_interviews_query->get_result()->fetch_all(MYSQL
                 </div>
                 <div class="stat-label">Total Applicants</div>
                 <div class="stat-value"><?php echo $total_applicants; ?></div>
+            </div>
+
+            <div class="stat-card" style="border-left-color: #17A2B8;">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #17A2B8 0%, #117a8b 100%);">
+                    <i class="fas fa-book"></i>
+                </div>
+                <div class="stat-label">Handbooks Uploaded</div>
+                <div class="stat-value"><?php echo $total_handbooks; ?></div>
             </div>
         </div>
 

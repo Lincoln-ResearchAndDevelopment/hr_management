@@ -1,7 +1,8 @@
 <?php
 
 /**
- * Request Late Arrival Page
+ * Staff Handbook Page
+ * Shows the current handbook uploaded by HR and lets staff download it as PDF.
  */
 session_start();
 include '../config.php';
@@ -13,11 +14,9 @@ if (!isset($_SESSION['staff_id'])) {
 }
 
 $staff_id = $_SESSION['staff_id'];
-$message = '';
-$message_type = '';
 
 // Get staff information
-$staff_query = $conn->prepare("SELECT id, first_name, last_name, email, lincoln_email, position FROM staff WHERE id = ?");
+$staff_query = $conn->prepare("SELECT id, first_name, last_name, position FROM staff WHERE id = ?");
 $staff_query->bind_param("i", $staff_id);
 $staff_query->execute();
 $staff = $staff_query->get_result()->fetch_assoc();
@@ -28,44 +27,23 @@ if (!$staff) {
     exit;
 }
 
-// Handle form submission
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $request_date = $_POST['request_date'] ?? '';
-    $late_arrival_time = $_POST['late_arrival_time'] ?? '';
-    $reason = $_POST['reason'] ?? '';
+// Get the current (most recently uploaded) handbook
+$handbook_query = $conn->query(
+    "SELECT sh.*, u.first_name AS uploader_first_name, u.last_name AS uploader_last_name
+     FROM staff_handbook sh
+     LEFT JOIN users u ON sh.uploaded_by = u.id
+     ORDER BY sh.uploaded_at DESC
+     LIMIT 1"
+);
+$handbook = $handbook_query ? $handbook_query->fetch_assoc() : null;
 
-    // Validate 12-24 hours before submission
-    $request_datetime = new DateTime($request_date . ' ' . $late_arrival_time);
-    $current_datetime = new DateTime();
-    $interval = $current_datetime->diff($request_datetime);
-    $hours_until = ($interval->days * 24) + $interval->h + ($interval->i / 60);
-
-    if ($hours_until < 12) {
-        $message = 'Error: Request must be submitted 12-24 hours before the stated late arrival time.';
-        $message_type = 'danger';
-    } elseif ($hours_until > 24) {
-        $message = 'Error: Request must be submitted within 24 hours before the late arrival time.';
-        $message_type = 'danger';
-    } else {
-        // Insert into database
-        $insert_query = $conn->prepare(
-            "INSERT INTO late_arrival_requests (staff_id, request_date, late_arrival_time, reason, status)
-             VALUES (?, ?, ?, ?, 'pending')"
-        );
-        $insert_query->bind_param("isss", $staff_id, $request_date, $late_arrival_time, $reason);
-
-        if ($insert_query->execute()) {
-            $message = 'Your request has been submitted successfully and is pending for approval from the HR. Please await a response from the HR before taking any action or Call the HR for quick response.';
-            $message_type = 'success';
-            // Reset form
-            $_POST = [];
-        } else {
-            $message = 'Error submitting request. Please try again.';
-            $message_type = 'danger';
-        }
+function formatFileSize($bytes)
+{
+    if ($bytes >= 1048576) {
+        return number_format($bytes / 1048576, 1) . ' MB';
     }
+    return number_format($bytes / 1024, 1) . ' KB';
 }
-
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -73,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Request Late Arrival - Staff Portal</title>
+    <title>Staff Handbook - Staff Portal</title>
 
     <!-- Bootstrap CSS -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
@@ -248,132 +226,123 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             margin-left: 0;
         }
 
-        .form-wrap {
-            max-width: 600px;
+        .handbook-wrap {
+            max-width: 700px;
             margin: 0 auto;
         }
 
-        .card {
-            border: none;
-            box-shadow: 0 5px 25px rgba(0, 0, 0, 0.1);
+        .handbook-card {
+            position: relative;
+            z-index: 1;
+            background: #fff;
             border-radius: 15px;
+            box-shadow: 0 5px 25px rgba(0, 0, 0, 0.1);
             overflow: hidden;
+            text-align: center;
+            padding: 50px 40px;
+            transition: box-shadow 0.4s ease;
         }
 
-        .card-header {
+        .handbook-card::before {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            border-radius: 17px;
+            background: linear-gradient(90deg,
+                    #C82333, #FF6B9D, #FFC107, #28A745, #17A2B8, #764BA2, #C82333);
+            background-size: 300% 300%;
+            animation: handbook-border-flow 5s linear infinite;
+            z-index: -2;
+        }
+
+        .handbook-card::after {
+            content: '';
+            position: absolute;
+            inset: 3px;
+            background: #fff;
+            border-radius: 13px;
+            z-index: -1;
+        }
+
+        .handbook-card:hover {
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.15);
+        }
+
+        @keyframes handbook-border-flow {
+            0% {
+                background-position: 0% 50%;
+            }
+
+            100% {
+                background-position: 300% 50%;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .handbook-card::before {
+                animation: none;
+            }
+        }
+
+        .handbook-icon {
+            width: 90px;
+            height: 90px;
+            border-radius: 50%;
             background: linear-gradient(135deg, #C82333 0%, #a01c28 100%);
             color: #fff;
-            padding: 30px;
-            border: none;
-        }
-
-        .card-header h2 {
-            margin: 0;
-            font-size: 1.8rem;
-            font-weight: 700;
             display: flex;
             align-items: center;
-            gap: 12px;
+            justify-content: center;
+            font-size: 2.5rem;
+            margin: 0 auto 25px;
         }
 
-        .card-body {
-            padding: 30px;
-        }
-
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        .form-group label {
-            font-weight: 600;
+        .handbook-card h2 {
+            font-size: 1.6rem;
+            font-weight: 700;
             color: #333;
-            margin-bottom: 8px;
-            display: block;
+            margin-bottom: 10px;
         }
 
-        .form-control,
-        .form-control:focus {
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            padding: 12px 15px;
-            font-size: 0.95rem;
-            transition: all 0.3s ease;
+        .handbook-card p.meta {
+            color: #888;
+            margin-bottom: 30px;
         }
 
-        .form-control:focus {
-            border-color: #C82333;
-            box-shadow: 0 0 0 3px rgba(200, 35, 51, 0.1);
-        }
-
-        .btn {
-            padding: 12px 30px;
-            font-weight: 600;
-            border-radius: 8px;
-            transition: all 0.3s ease;
-        }
-
-        .btn-primary {
+        .btn-download {
             background: linear-gradient(135deg, #C82333 0%, #a01c28 100%);
+            color: #fff;
             border: none;
+            padding: 14px 36px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1.05rem;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.3s ease;
         }
 
-        .btn-primary:hover {
+        .btn-download:hover {
             transform: translateY(-2px);
             box-shadow: 0 8px 20px rgba(200, 35, 51, 0.3);
+            color: #fff;
         }
 
-        .btn-secondary {
-            background-color: #e0e0e0;
-            color: #333;
-            border: none;
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.08);
+            color: #999;
         }
 
-        .btn-secondary:hover {
-            background-color: #d0d0d0;
-        }
-
-        .info-box {
-            background-color: #e8f4f8;
-            border-left: 4px solid #C82333;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            color: #333;
-        }
-
-        .info-box strong {
-            color: #C82333;
-        }
-
-        .alert {
-            border-radius: 8px;
-            border: none;
-        }
-
-        .staff-info {
-            background-color: #f5f5f5;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-        }
-
-        .staff-info-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid #e0e0e0;
-        }
-
-        .staff-info-row:last-child {
-            border-bottom: none;
-        }
-
-        .staff-info-row strong {
-            color: #333;
-        }
-
-        .staff-info-row span {
-            color: #666;
+        .empty-state i {
+            font-size: 3.5rem;
+            color: #ddd;
+            margin-bottom: 15px;
         }
 
         @media (max-width: 768px) {
@@ -402,12 +371,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 margin-left: 0;
             }
 
-            .card-header h2 {
-                font-size: 1.5rem;
-            }
-
-            .card-body {
-                padding: 20px;
+            .handbook-card {
+                padding: 35px 20px;
             }
         }
     </style>
@@ -438,13 +403,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </a>
             </li>
             <li style="border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 15px; margin-top: 10px;">
-                <a href="handbook.php">
+                <a href="handbook.php" class="active">
                     <i class="fas fa-book"></i>
                     <span>Staff Handbook</span>
                 </a>
             </li>
             <li>
-                <a href="request-permission.php" class="active">
+                <a href="request-permission.php">
                     <i class="fas fa-clipboard-check"></i>
                     <span>Request Permission</span>
                 </a>
@@ -500,7 +465,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <button class="toggle-btn" id="toggleBtn">
                 <i class="fas fa-bars"></i>
             </button>
-            <h1 class="topbar-title">Request Late Arrival</h1>
+            <h1 class="topbar-title">Staff Handbook</h1>
         </div>
 
         <div class="user-profile">
@@ -516,81 +481,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <!-- Main Content -->
     <div class="main-content" id="mainContent">
-        <div class="form-wrap">
-            <div class="card">
-                <div class="card-header">
-                    <h2>
-                        <i class="fas fa-hourglass-start"></i> Request Late Arrival
-                    </h2>
-                </div>
-
-                <div class="card-body">
-                    <!-- Success/Error Messages -->
-                    <?php if (!empty($message)): ?>
-                        <div class="alert alert-<?php echo $message_type; ?> alert-dismissible fade show" role="alert">
-                            <?php echo htmlspecialchars($message); ?>
-                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                        </div>
-                    <?php endif; ?>
-
-                    <!-- Staff Information -->
-                    <div class="staff-info">
-                        <div class="staff-info-row">
-                            <strong>Name:</strong>
-                            <span><?php echo htmlspecialchars($staff['first_name'] . ' ' . $staff['last_name']); ?></span>
-                        </div>
-                        <div class="staff-info-row">
-                            <strong>Position:</strong>
-                            <span><?php echo htmlspecialchars($staff['position']); ?></span>
-                        </div>
-                        <div class="staff-info-row">
-                            <strong>Email:</strong>
-                            <span><?php echo htmlspecialchars($staff['lincoln_email'] ?: $staff['email']); ?></span>
-                        </div>
-                        <div class="staff-info-row">
-                            <strong>Phone:</strong>
-                            <span><?php echo htmlspecialchars($staff['phone'] ?? 'N/A'); ?></span>
-                        </div>
+        <div class="handbook-wrap">
+            <?php if ($handbook): ?>
+                <div class="handbook-card">
+                    <div class="handbook-icon">
+                        <i class="fas fa-book"></i>
                     </div>
-
-                    <!-- Information Box -->
-                    <div class="info-box">
-                        <i class="fas fa-info-circle"></i>
-                        <strong> Note:</strong> This form can only be filled 12-24 hours before the stated late arrival time.
-                    </div>
-
-                    <!-- Form -->
-                    <form method="POST" action="">
-                        <div class="form-group">
-                            <label for="request_date">Date <span style="color: red;">*</span></label>
-                            <input type="date" class="form-control" id="request_date" name="request_date"
-                                value="<?php echo htmlspecialchars($_POST['request_date'] ?? ''); ?>" required>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="late_arrival_time">Late Arrival Time <span style="color: red;">*</span></label>
-                            <input type="time" class="form-control" id="late_arrival_time" name="late_arrival_time"
-                                value="<?php echo htmlspecialchars($_POST['late_arrival_time'] ?? ''); ?>" required>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="reason">Reason <span style="color: red;">*</span></label>
-                            <textarea class="form-control" id="reason" name="reason" rows="5"
-                                placeholder="Please provide a detailed reason for your late arrival..."
-                                required><?php echo htmlspecialchars($_POST['reason'] ?? ''); ?></textarea>
-                        </div>
-
-                        <div style="display: flex; gap: 10px;">
-                            <button type="submit" class="btn btn-primary">
-                                <i class="fas fa-check"></i> Submit Request
-                            </button>
-                            <a href="dashboard.php" class="btn btn-secondary">
-                                <i class="fas fa-times"></i> Cancel
-                            </a>
-                        </div>
-                    </form>
+                    <h2><?php echo htmlspecialchars($handbook['title']); ?></h2>
+                    <p class="meta">
+                        <?php echo formatFileSize($handbook['file_size']); ?> PDF
+                        &middot; Uploaded <?php echo date('M d, Y', strtotime($handbook['uploaded_at'])); ?>
+                        <?php if ($handbook['uploader_first_name']): ?>
+                            by <?php echo htmlspecialchars($handbook['uploader_first_name'] . ' ' . $handbook['uploader_last_name']); ?>
+                        <?php endif; ?>
+                    </p>
+                    <a href="../uploads/handbook/<?php echo rawurlencode($handbook['file_name']); ?>"
+                        class="btn-download" download="<?php echo htmlspecialchars($handbook['title']); ?>.pdf">
+                        <i class="fas fa-download"></i> Download PDF
+                    </a>
                 </div>
-            </div>
+            <?php else: ?>
+                <div class="empty-state">
+                    <i class="fas fa-book"></i>
+                    <p><strong>No handbook available yet</strong></p>
+                    <p style="color: #bbb;">HR hasn't uploaded a staff handbook. Check back later.</p>
+                </div>
+            <?php endif; ?>
         </div>
     </div>
     <!-- End Main Content -->

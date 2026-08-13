@@ -20,8 +20,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_password'])) {
     $new_password = $_POST['new_password'] ?? '';
     $confirm_password = $_POST['confirm_password'] ?? '';
 
-    // Verify current password
-    if (password_verify($current_password, $user['password'])) {
+    // Verify current password. getCurrentHR() does not select the password
+    // hash (it's used across the app for display, and several callers would
+    // otherwise carry it around unnecessarily), so fetch it directly here.
+    $pwd_check = $conn->prepare("SELECT password FROM users WHERE id = ?");
+    $pwd_check->bind_param("i", $user['id']);
+    $pwd_check->execute();
+    $current_hash = $pwd_check->get_result()->fetch_assoc()['password'] ?? '';
+
+    if (password_verify($current_password, $current_hash)) {
         if ($new_password === $confirm_password && strlen($new_password) >= 8) {
             $hashed_pwd = password_hash($new_password, PASSWORD_BCRYPT);
             $update = $conn->prepare("UPDATE users SET password = ? WHERE id = ?");

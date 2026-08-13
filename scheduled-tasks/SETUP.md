@@ -144,13 +144,24 @@ The following tables must exist:
 
 ## Overview
 
-This scheduler sends contract end reminders to staff one month before their contract end date, and CCs the HR email.
+This scheduler reminds HR about every active staff contract ending within
+30 days, or already past its end date and not yet renewed. It sends to the
+HR email as the primary recipient (CCs the staff member's Lincoln email if
+present) and keeps sending once a day for as long as the contract remains
+unrenewed - renewing a contract (extending `contract_end_date` past the
+30-day window, e.g. via the "Renew Contract" button on the HR dashboard)
+stops the reminders.
+
+The HR dashboard (`hr/index.php`) also shows the same "Contracts Ending
+Soon" list directly on every page load, independent of whether this
+scheduled task is actually running - so HR always sees it even without
+cron/Task Scheduler configured.
 
 ## Files Involved
 
 - `scheduled-tasks/send-contract-end-reminders.php` - The contract reminder script
 - `classes/Mailer.php` - Contains `sendContractEndingReminder()` method
-- `email-templates/contract-ending-reminder.html` - Email template for contract reminders
+- `email-templates/contract-ending-reminder-hr.html` - Email template (addressed to HR)
 
 ## Setup Instructions
 
@@ -177,8 +188,12 @@ https://yoursite.com/hr/scheduled-tasks/send-contract-end-reminders.php
 ## How It Works
 
 1. The script runs once daily.
-2. It checks staff contracts that end exactly one month from today.
-3. It sends a reminder to the staff Lincoln email and CCs the HR email.
+2. It checks all active staff whose contract ends within 30 days from
+   today, or has already ended (no upper bound - a contract left unrenewed
+   for months will keep triggering the reminder).
+3. It sends the reminder to the HR email as the primary recipient (the
+   `users` account that created the staff record) and CCs the staff
+   member's Lincoln email if one is set.
 
 ## Database Requirements
 
@@ -191,4 +206,5 @@ The following columns must exist in `staff`:
 
 ## Notes
 
-- Reminders are sent only for active staff with a Lincoln email.
+- Reminders require a resolvable HR email (via `staff.created_by` ->
+  `users.email`); the staff member's own Lincoln email is optional (CC only).

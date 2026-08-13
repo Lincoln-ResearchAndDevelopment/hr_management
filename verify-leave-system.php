@@ -208,7 +208,7 @@ header('Content-Type: text/html; charset=utf-8');
                     echo "<h4><i class='fas fa-exclamation-triangle'></i> Installation Incomplete</h4>";
                     echo "<p>Some components are missing. Please follow the installation guide:</p>";
                     echo "<ol>";
-                    echo "<li>Run the SQL migration: <code>database/leave_system_update.sql</code></li>";
+                    echo "<li>Run the schema: <code>database/new_hr_schema.sql</code></li>";
                     echo "<li>Ensure <code>classes/LeaveManager.php</code> exists</li>";
                     echo "<li>Verify file permissions</li>";
                     echo "</ol>";

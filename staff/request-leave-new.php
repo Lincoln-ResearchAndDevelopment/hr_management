@@ -17,11 +17,67 @@ $staff_id = $_SESSION['staff_id'];
 $message = '';
 $message_type = '';
 
+/**
+ * Counts weekdays (Mon-Fri) between two dates, inclusive, excluding any
+ * public holiday that applies to the given campus (or all campuses).
+ * Saturdays, Sundays, and public holidays are never counted as leave days.
+ */
+function countWeekdays($start_date, $end_date, $conn = null, $campus_location = null)
+{
+    $start = new DateTime($start_date);
+    $end = new DateTime($end_date);
+    if ($end < $start) {
+        return 0;
+    }
+    $end->modify('+1 day'); // DatePeriod's end is exclusive
+    $period = new DatePeriod($start, new DateInterval('P1D'), $end);
+
+    $holidays = getPublicHolidaysInRange($conn, $start_date, $end_date, $campus_location);
+
+    $count = 0;
+    foreach ($period as $date) {
+        $d = $date->format('Y-m-d');
+        if ((int) $date->format('N') < 6 && !in_array($d, $holidays, true)) { // 1=Mon ... 5=Fri, 6=Sat, 7=Sun
+            $count++;
+        }
+    }
+    return $count;
+}
+
+/**
+ * Returns an array of 'Y-m-d' holiday date strings that fall within the
+ * given range and apply to the given campus (or all campuses).
+ */
+function getPublicHolidaysInRange($conn, $start_date, $end_date, $campus_location = null)
+{
+    if (!$conn) {
+        return [];
+    }
+    $sql = "SELECT holiday_date FROM public_holidays WHERE holiday_date BETWEEN ? AND ? AND (campus_location IS NULL";
+    $types = 'ss';
+    $params = [$start_date, $end_date];
+    if (!empty($campus_location)) {
+        $sql .= " OR campus_location = ?";
+        $types .= 's';
+        $params[] = $campus_location;
+    }
+    $sql .= ")";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $holidays = [];
+    while ($row = $result->fetch_assoc()) {
+        $holidays[] = $row['holiday_date'];
+    }
+    return $holidays;
+}
+
 // Initialize Leave Manager
 $leaveManager = new LeaveManager($conn);
 
 // Get staff information
-$staff_query = $conn->prepare("SELECT id, first_name, last_name, email, position, gender FROM staff WHERE id = ?");
+$staff_query = $conn->prepare("SELECT id, first_name, last_name, email, lincoln_email, position, gender, campus_location FROM staff WHERE id = ?");
 $staff_query->bind_param("i", $staff_id);
 $staff_query->execute();
 $staff = $staff_query->get_result()->fetch_assoc();
@@ -54,10 +110,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $substitute_staff_id = !empty($_POST['substitute_staff_id']) ? $_POST['substitute_staff_id'] : null;
     $supporting_documents = '';
 
-    // Calculate total days
-    $start = new DateTime($start_date);
-    $end = new DateTime($end_date);
-    $total_days = $end->diff($start)->days + 1; // +1 to include end date
+    // Calculate total days - weekdays only, Saturdays and Sundays are excluded
+    $total_days = countWeekdays($start_date, $end_date, $conn, $staff['campus_location'] ?? null);
 
     // Validate dates
     if (empty($leave_type_id)) {
@@ -148,10 +202,162 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             padding: 0;
         }
 
-        .container {
+        /* Sidebar */
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            width: 280px;
+            background: linear-gradient(135deg, #C82333 0%, #a01c28 100%);
+            color: #fff;
+            padding: 20px 0;
+            overflow-y: auto;
+            transition: all 0.3s ease;
+            z-index: 1000;
+            box-shadow: 2px 0 10px rgba(0, 0, 0, 0.15);
+        }
+
+        .sidebar.collapsed {
+            margin-left: -280px;
+        }
+
+        .sidebar-header {
+            padding: 0 20px 30px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .sidebar-logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: #fff;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 1.2rem;
+            transition: all 0.3s ease;
+        }
+
+        .sidebar-logo:hover {
+            opacity: 0.9;
+            color: #fff;
+        }
+
+        .sidebar-logo span {
+            background-color: rgba(255, 255, 255, 0.2);
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+
+        .sidebar-menu {
+            list-style: none;
+            padding: 20px 0;
+            margin: 0;
+        }
+
+        .sidebar-menu li {
+            margin: 0;
+        }
+
+        .sidebar-menu a {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: rgba(255, 255, 255, 0.8);
+            text-decoration: none;
+            padding: 15px 20px;
+            transition: all 0.3s ease;
+            border-left: 4px solid transparent;
+        }
+
+        .sidebar-menu a:hover,
+        .sidebar-menu a.active {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            border-left-color: #fff;
+        }
+
+        .sidebar-menu i {
+            width: 20px;
+            text-align: center;
+            font-size: 1.1rem;
+        }
+
+        /* Topbar */
+        .topbar {
+            position: fixed;
+            top: 0;
+            left: 280px;
+            right: 0;
+            height: 70px;
+            background: #fff;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 30px;
+            z-index: 999;
+            transition: left 0.3s ease;
+        }
+
+        .topbar.full-width {
+            left: 0;
+        }
+
+        .toggle-btn {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: #333;
+            cursor: pointer;
+        }
+
+        .toggle-btn:hover {
+            color: #C82333;
+        }
+
+        .topbar-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #333;
+            margin: 0;
+        }
+
+        .user-profile {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .user-avatar {
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #C82333 0%, #a01c28 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-weight: 700;
+            font-size: 1.1rem;
+        }
+
+        /* Main Content */
+        .main-content {
+            margin-left: 280px;
+            margin-top: 70px;
+            padding: 30px;
+            transition: margin-left 0.3s ease;
+        }
+
+        .main-content.full-width {
+            margin-left: 0;
+        }
+
+        .form-wrap {
             max-width: 900px;
-            margin-top: 30px;
-            margin-bottom: 50px;
+            margin: 0 auto;
         }
 
         .card {
@@ -347,9 +553,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         @media (max-width: 768px) {
-            .container {
-                margin-top: 20px;
-                padding: 15px;
+            .sidebar {
+                width: 220px;
+            }
+
+            .sidebar.collapsed {
+                margin-left: -220px;
+            }
+
+            .topbar {
+                left: 220px;
+            }
+
+            .topbar.full-width {
+                left: 0;
+            }
+
+            .main-content {
+                margin-left: 220px;
+                padding: 20px;
+            }
+
+            .main-content.full-width {
+                margin-left: 0;
             }
 
             .card-header h2 {
@@ -372,184 +598,319 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 
 <body>
-    <div class="container">
-        <!-- Leave Balances Card -->
-        <div class="card">
-            <div class="card-header">
-                <h2>
-                    <i class="fas fa-chart-bar"></i> Your Leave Balances
-                </h2>
-            </div>
-            <div class="card-body">
-                <div class="leave-balances-container">
-                    <?php foreach ($leave_types as $leave_type): ?>
-                        <div class="leave-balance-card <?php echo $leave_type['is_unlimited'] ? 'unlimited' : ($leave_type['is_exhausted'] || !$leave_type['can_request'] ? 'exhausted' : ''); ?>">
-                            <div class="leave-name"><?php echo htmlspecialchars($leave_type['name']); ?></div>
-                            <div class="leave-days">
-                                <?php
-                                if ($leave_type['is_unlimited']) {
-                                    echo '<i class="fas fa-infinity"></i>';
-                                } else {
-                                    echo $leave_type['days_remaining'];
-                                }
-                                ?>
-                            </div>
-                            <div class="leave-label">
-                                <?php
-                                if ($leave_type['is_unlimited']) {
-                                    echo 'Unlimited';
-                                } elseif ($leave_type['is_one_time'] && $leave_type['has_used_one_time']) {
-                                    echo 'Already Used';
-                                } else {
-                                    echo 'of ' . $leave_type['staff_days_allocated'] . ' days';
-                                }
-                                ?>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
-                </div>
-            </div>
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <a href="#" class="sidebar-logo" style="display: flex; align-items: center; gap: 8px; justify-content: center;">
+                <img src="../assets/img/lincoln_college.png" alt="Lincoln College" style="height: 38px; width: auto; object-fit: contain;">
+                <div style="height: 30px; width: 1.5px; background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.3), transparent);"></div>
+                <img src="../assets/img/logo_malaysia.png" alt="Malaysia" style="height: 38px; width: auto; object-fit: contain;">
+            </a>
         </div>
 
-        <!-- Request Leave Form Card -->
-        <div class="card">
-            <div class="card-header">
-                <h2>
-                    <i class="fas fa-calendar-plus"></i> Request Leave
-                </h2>
+        <ul class="sidebar-menu">
+            <li>
+                <a href="dashboard.php">
+                    <i class="fas fa-home"></i>
+                    <span>Dashboard</span>
+                </a>
+            </li>
+            <li>
+                <a href="profile.php">
+                    <i class="fas fa-user"></i>
+                    <span>My Profile</span>
+                </a>
+            </li>
+            <li style="border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 15px; margin-top: 10px;">
+                <a href="handbook.php">
+                    <i class="fas fa-book"></i>
+                    <span>Staff Handbook</span>
+                </a>
+            </li>
+            <li>
+                <a href="request-permission.php" class="active">
+                    <i class="fas fa-clipboard-check"></i>
+                    <span>Request Permission</span>
+                </a>
+            </li>
+            <li>
+                <a href="attendance.php">
+                    <i class="fas fa-fingerprint"></i>
+                    <span>Attendance</span>
+                </a>
+            </li>
+            <li>
+                <a href="payroll.php">
+                    <i class="fas fa-money-bill-wave"></i>
+                    <span>Payroll</span>
+                </a>
+            </li>
+            <li>
+                <a href="communication.php">
+                    <i class="fas fa-comments"></i>
+                    <span>Communication</span>
+                </a>
+            </li>
+            <li>
+                <a href="appraisal.php">
+                    <i class="fas fa-star"></i>
+                    <span>Staff Appraisal</span>
+                </a>
+            </li>
+            <li>
+                <a href="training.php">
+                    <i class="fas fa-chalkboard-teacher"></i>
+                    <span>Training & Workshops</span>
+                </a>
+            </li>
+            <li>
+                <a href="disciplinary.php">
+                    <i class="fas fa-gavel"></i>
+                    <span>Disciplinary Actions</span>
+                </a>
+            </li>
+            <li style="margin-top: auto; border-top: 1px solid rgba(255, 255, 255, 0.2); padding-top: 20px;">
+                <a href="logout.php" style="color: #ff9999;">
+                    <i class="fas fa-sign-out-alt"></i>
+                    <span>Logout</span>
+                </a>
+            </li>
+        </ul>
+    </aside>
+
+    <!-- Topbar -->
+    <div class="topbar" id="topbar">
+        <div style="display: flex; align-items: center; gap: 20px;">
+            <button class="toggle-btn" id="toggleBtn">
+                <i class="fas fa-bars"></i>
+            </button>
+            <h1 class="topbar-title">Request Leave</h1>
+        </div>
+
+        <div class="user-profile">
+            <div style="text-align: right;">
+                <p style="margin: 0; font-weight: 600; color: #333;"><?php echo htmlspecialchars($staff['first_name'] . ' ' . $staff['last_name']); ?></p>
+                <p style="margin: 0; font-size: 0.9rem; color: #666;"><?php echo htmlspecialchars($staff['position'] ?? 'Staff'); ?></p>
             </div>
-
-            <div class="card-body">
-                <!-- Success/Error Messages -->
-                <?php if (!empty($message)): ?>
-                    <div class="alert alert-<?php echo $message_type; ?> alert-dismissible fade show" role="alert">
-                        <?php echo htmlspecialchars($message); ?>
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                <?php endif; ?>
-
-                <!-- Staff Information -->
-                <div class="staff-info">
-                    <div class="staff-info-row">
-                        <strong>Name:</strong>
-                        <span><?php echo htmlspecialchars($staff['first_name'] . ' ' . $staff['last_name']); ?></span>
-                    </div>
-                    <div class="staff-info-row">
-                        <strong>Position:</strong>
-                        <span><?php echo htmlspecialchars($staff['position']); ?></span>
-                    </div>
-                    <div class="staff-info-row">
-                        <strong>Email:</strong>
-                        <span><?php echo htmlspecialchars($staff['email']); ?></span>
-                    </div>
-                </div>
-
-                <!-- Information Box -->
-                <div class="info-box">
-                    <i class="fas fa-info-circle"></i>
-                    <strong> Important:</strong> Your leave request will be forwarded to HR for approval. Please ensure you select the correct leave type and provide all necessary details.
-                </div>
-
-                <!-- Form -->
-                <form method="POST" action="" enctype="multipart/form-data" id="leaveForm">
-                    <div class="form-group">
-                        <label for="leave_type_id">Leave Type <span style="color: red;">*</span></label>
-                        <select class="form-control" id="leave_type_id" name="leave_type_id" required>
-                            <option value="">-- Select Leave Type --</option>
-                            <?php foreach ($leave_types as $leave_type): ?>
-                                <option value="<?php echo $leave_type['id']; ?>"
-                                    data-min="<?php echo $leave_type['min_days'] ?? ''; ?>"
-                                    data-max="<?php echo $leave_type['max_days'] ?? ''; ?>"
-                                    data-can-request="<?php echo $leave_type['can_request']; ?>"
-                                    data-remaining="<?php echo $leave_type['days_remaining']; ?>"
-                                    <?php echo !$leave_type['can_request'] ? 'disabled' : ''; ?>
-                                    <?php echo (isset($_POST['leave_type_id']) && $_POST['leave_type_id'] == $leave_type['id']) ? 'selected' : ''; ?>>
-                                    <?php
-                                    echo htmlspecialchars($leave_type['name']);
-                                    if (!$leave_type['can_request']) {
-                                        if ($leave_type['is_one_time'] && $leave_type['has_used_one_time']) {
-                                            echo ' (Already Used)';
-                                        } else {
-                                            echo ' (Exhausted)';
-                                        }
-                                    } else if (!$leave_type['is_unlimited']) {
-                                        echo ' (' . $leave_type['days_remaining'] . ' days available)';
-                                    }
-                                    ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                        <small class="text-muted" id="leave-type-info"></small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="request_date">Date of Request <span style="color: red;">*</span></label>
-                        <input type="date" class="form-control" id="request_date" name="request_date"
-                            value="<?php echo htmlspecialchars($_POST['request_date'] ?? date('Y-m-d')); ?>" required>
-                    </div>
-
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="start_date">Start Date <span style="color: red;">*</span></label>
-                            <input type="date" class="form-control" id="start_date" name="start_date"
-                                value="<?php echo htmlspecialchars($_POST['start_date'] ?? ''); ?>" required>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="end_date">End Date <span style="color: red;">*</span></label>
-                            <input type="date" class="form-control" id="end_date" name="end_date"
-                                value="<?php echo htmlspecialchars($_POST['end_date'] ?? ''); ?>" required>
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <div class="alert alert-info" id="days-calculation" style="display: none;">
-                            <strong>Total Days:</strong> <span id="total-days">0</span> days
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="reason">Reason for Leave <span style="color: red;">*</span></label>
-                        <textarea class="form-control" id="reason" name="reason" rows="4"
-                            placeholder="Please provide a detailed reason for your leave request..."
-                            required><?php echo htmlspecialchars($_POST['reason'] ?? ''); ?></textarea>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="substitute_staff_id">Staff Substitute <span class="optional-label">(Optional)</span></label>
-                        <select class="form-control" id="substitute_staff_id" name="substitute_staff_id">
-                            <option value="">-- Select a substitute staff (optional) --</option>
-                            <?php foreach ($staff_list as $staff_member): ?>
-                                <option value="<?php echo $staff_member['id']; ?>"
-                                    <?php echo (isset($_POST['substitute_staff_id']) && $_POST['substitute_staff_id'] == $staff_member['id']) ? 'selected' : ''; ?>>
-                                    <?php echo htmlspecialchars($staff_member['first_name'] . ' ' . $staff_member['last_name']); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="supporting_documents">Upload Supporting Documents <span class="optional-label">(Optional)</span></label>
-                        <input type="file" class="form-control" id="supporting_documents" name="supporting_documents"
-                            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
-                        <small class="text-muted">Accepted formats: PDF, DOC, DOCX, JPG, PNG (Max 5MB)</small>
-                    </div>
-
-                    <div style="display: flex; gap: 10px;">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-paper-plane"></i> Submit Request
-                        </button>
-                        <a href="dashboard.php" class="btn btn-secondary">
-                            <i class="fas fa-arrow-left"></i> Back to Dashboard
-                        </a>
-                    </div>
-                </form>
+            <div class="user-avatar">
+                <?php echo strtoupper(substr($staff['first_name'], 0, 1)); ?>
             </div>
         </div>
     </div>
 
+    <!-- Main Content -->
+    <div class="main-content" id="mainContent">
+        <div class="form-wrap">
+            <!-- Leave Balances Card -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>
+                        <i class="fas fa-chart-bar"></i> Your Leave Balances
+                    </h2>
+                </div>
+                <div class="card-body">
+                    <div class="leave-balances-container">
+                        <?php foreach ($leave_types as $leave_type): ?>
+                            <div class="leave-balance-card <?php echo $leave_type['is_unlimited'] ? 'unlimited' : ($leave_type['is_exhausted'] || !$leave_type['can_request'] ? 'exhausted' : ''); ?>">
+                                <div class="leave-name"><?php echo htmlspecialchars($leave_type['name']); ?></div>
+                                <div class="leave-days">
+                                    <?php
+                                    if ($leave_type['is_unlimited']) {
+                                        echo '<i class="fas fa-infinity"></i>';
+                                    } else {
+                                        echo $leave_type['days_remaining'];
+                                    }
+                                    ?>
+                                </div>
+                                <div class="leave-label">
+                                    <?php
+                                    if ($leave_type['is_unlimited']) {
+                                        echo 'Unlimited';
+                                    } elseif ($leave_type['is_one_time'] && $leave_type['has_used_one_time']) {
+                                        echo 'Already Used';
+                                    } else {
+                                        echo 'of ' . $leave_type['staff_days_allocated'] . ' days';
+                                    }
+                                    ?>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Request Leave Form Card -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>
+                        <i class="fas fa-calendar-plus"></i> Request Leave
+                    </h2>
+                </div>
+
+                <div class="card-body">
+                    <!-- Success/Error Messages -->
+                    <?php if (!empty($message)): ?>
+                        <div class="alert alert-<?php echo $message_type; ?> alert-dismissible fade show" role="alert">
+                            <?php echo htmlspecialchars($message); ?>
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    <?php endif; ?>
+
+                    <!-- Staff Information -->
+                    <div class="staff-info">
+                        <div class="staff-info-row">
+                            <strong>Name:</strong>
+                            <span><?php echo htmlspecialchars($staff['first_name'] . ' ' . $staff['last_name']); ?></span>
+                        </div>
+                        <div class="staff-info-row">
+                            <strong>Position:</strong>
+                            <span><?php echo htmlspecialchars($staff['position']); ?></span>
+                        </div>
+                        <div class="staff-info-row">
+                            <strong>Email:</strong>
+                            <span><?php echo htmlspecialchars($staff['lincoln_email'] ?: $staff['email']); ?></span>
+                        </div>
+                    </div>
+
+                    <!-- Information Box -->
+                    <div class="info-box">
+                        <i class="fas fa-info-circle"></i>
+                        <strong> Important:</strong> Your leave request will be forwarded to HR for approval. Please ensure you select the correct leave type and provide all necessary details.
+                    </div>
+
+                    <!-- Form -->
+                    <form method="POST" action="" enctype="multipart/form-data" id="leaveForm">
+                        <div class="form-group">
+                            <label for="leave_type_id">Leave Type <span style="color: red;">*</span></label>
+                            <select class="form-control" id="leave_type_id" name="leave_type_id" required>
+                                <option value="">-- Select Leave Type --</option>
+                                <?php foreach ($leave_types as $leave_type): ?>
+                                    <option value="<?php echo $leave_type['id']; ?>"
+                                        data-min="<?php echo $leave_type['min_days'] ?? ''; ?>"
+                                        data-max="<?php echo $leave_type['max_days'] ?? ''; ?>"
+                                        data-can-request="<?php echo $leave_type['can_request']; ?>"
+                                        data-remaining="<?php echo $leave_type['days_remaining']; ?>"
+                                        <?php echo !$leave_type['can_request'] ? 'disabled' : ''; ?>
+                                        <?php echo (isset($_POST['leave_type_id']) && $_POST['leave_type_id'] == $leave_type['id']) ? 'selected' : ''; ?>>
+                                        <?php
+                                        echo htmlspecialchars($leave_type['name']);
+                                        if (!$leave_type['can_request']) {
+                                            if ($leave_type['is_one_time'] && $leave_type['has_used_one_time']) {
+                                                echo ' (Already Used)';
+                                            } else {
+                                                echo ' (Exhausted)';
+                                            }
+                                        } else if (!$leave_type['is_unlimited']) {
+                                            echo ' (' . $leave_type['days_remaining'] . ' days available)';
+                                        }
+                                        ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <small class="text-muted" id="leave-type-info"></small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="request_date">Date of Request <span style="color: red;">*</span></label>
+                            <input type="date" class="form-control" id="request_date" name="request_date"
+                                value="<?php echo htmlspecialchars($_POST['request_date'] ?? date('Y-m-d')); ?>" required>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="start_date">Start Date <span style="color: red;">*</span></label>
+                                <input type="date" class="form-control" id="start_date" name="start_date"
+                                    value="<?php echo htmlspecialchars($_POST['start_date'] ?? ''); ?>" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="end_date">End Date <span style="color: red;">*</span></label>
+                                <input type="date" class="form-control" id="end_date" name="end_date"
+                                    value="<?php echo htmlspecialchars($_POST['end_date'] ?? ''); ?>" required>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <div class="alert alert-info" id="days-calculation" style="display: none;">
+                                <strong>Total Days:</strong> <span id="total-days">0</span> working day(s) <small class="text-muted">(weekends and public holidays excluded)</small>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="reason">Reason for Leave <span style="color: red;">*</span></label>
+                            <textarea class="form-control" id="reason" name="reason" rows="4"
+                                placeholder="Please provide a detailed reason for your leave request..."
+                                required><?php echo htmlspecialchars($_POST['reason'] ?? ''); ?></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="substitute_staff_id">Staff Substitute <span class="optional-label">(Optional)</span></label>
+                            <select class="form-control" id="substitute_staff_id" name="substitute_staff_id">
+                                <option value="">-- Select a substitute staff (optional) --</option>
+                                <?php foreach ($staff_list as $staff_member): ?>
+                                    <option value="<?php echo $staff_member['id']; ?>"
+                                        <?php echo (isset($_POST['substitute_staff_id']) && $_POST['substitute_staff_id'] == $staff_member['id']) ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($staff_member['first_name'] . ' ' . $staff_member['last_name']); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="supporting_documents">Upload Supporting Documents <span class="optional-label">(Optional)</span></label>
+                            <input type="file" class="form-control" id="supporting_documents" name="supporting_documents"
+                                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+                            <small class="text-muted">Accepted formats: PDF, DOC, DOCX, JPG, PNG (Max 5MB)</small>
+                        </div>
+
+                        <div style="display: flex; gap: 10px;">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-paper-plane"></i> Submit Request
+                            </button>
+                            <a href="dashboard.php" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left"></i> Back to Dashboard
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- End Main Content -->
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
     <script>
+        // Public holidays that apply to this staff member (all-campus + their own campus),
+        // as 'YYYY-MM-DD' strings. Never counted as leave days, same as weekends.
+        <?php
+        $all_holidays_stmt = $conn->prepare("SELECT holiday_date FROM public_holidays WHERE campus_location IS NULL OR campus_location = ?");
+        $staff_campus = $staff['campus_location'] ?? '';
+        $all_holidays_stmt->bind_param('s', $staff_campus);
+        $all_holidays_stmt->execute();
+        $all_holidays_rows = $all_holidays_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $all_holiday_dates = array_map(fn($r) => $r['holiday_date'], $all_holidays_rows);
+        ?>
+        const publicHolidays = <?php echo json_encode($all_holiday_dates); ?>;
+
+        // Counts weekdays (Mon-Fri) between two dates, inclusive, excluding public
+        // holidays. Weekends and holidays are not working days and are never
+        // counted as leave days.
+        function countWeekdays(startDate, endDate) {
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            if (end < start) return 0;
+
+            let count = 0;
+            const cur = new Date(start);
+            while (cur <= end) {
+                const day = cur.getDay(); // 0 = Sunday, 6 = Saturday
+                const iso = cur.toISOString().slice(0, 10);
+                if (day !== 0 && day !== 6 && !publicHolidays.includes(iso)) count++;
+                cur.setDate(cur.getDate() + 1);
+            }
+            return count;
+        }
+
         // Calculate total days when dates change
         document.getElementById('start_date').addEventListener('change', calculateDays);
         document.getElementById('end_date').addEventListener('change', calculateDays);
@@ -559,17 +920,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const endDate = document.getElementById('end_date').value;
 
             if (startDate && endDate) {
-                const start = new Date(startDate);
-                const end = new Date(endDate);
-                const diffTime = end - start;
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+                const weekdayCount = countWeekdays(startDate, endDate);
 
-                if (diffDays > 0) {
-                    document.getElementById('total-days').textContent = diffDays;
+                if (weekdayCount > 0) {
+                    document.getElementById('total-days').textContent = weekdayCount;
                     document.getElementById('days-calculation').style.display = 'block';
 
                     // Validate against leave type limits
-                    validateLeaveDays(diffDays);
+                    validateLeaveDays(weekdayCount);
                 } else {
                     document.getElementById('days-calculation').style.display = 'none';
                 }
@@ -636,16 +994,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const endDate = document.getElementById('end_date').value;
 
             if (startDate && endDate) {
-                const start = new Date(startDate);
-                const end = new Date(endDate);
-                const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+                const weekdayCount = countWeekdays(startDate, endDate);
 
-                if (!validateLeaveDays(diffDays)) {
+                if (!validateLeaveDays(weekdayCount)) {
                     e.preventDefault();
                     return false;
                 }
             }
         });
+
+        // Sidebar toggle functionality
+        const toggleBtn = document.getElementById('toggleBtn');
+        const sidebar = document.getElementById('sidebar');
+        const topbar = document.getElementById('topbar');
+        const mainContent = document.getElementById('mainContent');
+
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', function() {
+                sidebar.classList.toggle('collapsed');
+                topbar.classList.toggle('full-width');
+                mainContent.classList.toggle('full-width');
+            });
+        }
     </script>
 </body>
 

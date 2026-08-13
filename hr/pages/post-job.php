@@ -26,9 +26,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['post_job'])) {
     $deadline = $_POST['deadline'] ?? null;
 
     $allowed_locations = [
-        'Abuja Campus',
-        'Nasarawa State Campus (Nsuk)',
-        'Gombe'
+        'Lincoln College, Abuja Campus',
+        'Lincoln University, NSUK Campus',
+        'Lincoln University, Kumo Campus'
     ];
 
     if (!in_array($location, $allowed_locations, true)) {
@@ -344,9 +344,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['post_job'])) {
                         <label for="location">Campus Location *</label>
                         <select id="location" name="location" required>
                             <option value="">Select Campus</option>
-                            <option value="Abuja Campus">Abuja Campus</option>
-                            <option value="Nasarawa State Campus (Nsuk)">Nasarawa State Campus (Nsuk)</option>
-                            <option value="Gombe">Gombe</option>
+                            <option value="Lincoln College, Abuja Campus">Lincoln College, Abuja Campus</option>
+                            <option value="Lincoln University, NSUK Campus">Lincoln University, NSUK Campus</option>
+                            <option value="Lincoln University, Kumo Campus">Lincoln University, Kumo Campus</option>
                         </select>
                     </div>
 

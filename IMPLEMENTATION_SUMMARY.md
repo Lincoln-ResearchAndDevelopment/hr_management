@@ -42,7 +42,7 @@ I have successfully implemented a comprehensive leave management system for your
 
 ```
 classes/LeaveManager.php                    - Leave management logic
-database/leave_system_update.sql            - Complete database setup
+database/new_hr_schema.sql                  - Complete database schema
 LEAVE_SYSTEM_IMPLEMENTATION.md              - Comprehensive documentation
 QUICK_SETUP_GUIDE.md                        - Quick installation guide
 verify-leave-system.php                     - Installation verification script
@@ -89,19 +89,21 @@ hr/pages/staff-requests.php      - Added leave type information
 
 ### Step 1: Run Database Setup (REQUIRED)
 
+The schema file creates the `new_hr` database and every table, view,
+trigger, procedure and function the system needs. You do not need to
+create the database first.
+
 **Option A: Using phpMyAdmin**
 
 1. Open phpMyAdmin
-2. Select your database (e.g., `hrsystem`)
-3. Click on "SQL" tab
-4. Open the file: `database/leave_system_update.sql`
-5. Copy all contents and paste into the SQL window
-6. Click "Go" to execute
+2. Click the "Import" tab (no database selected - the file creates it)
+3. Choose the file: `database/new_hr_schema.sql`
+4. Click "Go" to execute
 
 **Option B: Using MySQL Command Line**
 
 ```bash
-mysql -u root -p hrsystem < database/leave_system_update.sql
+mysql -u root < database/new_hr_schema.sql
 ```
 
 ### Step 2: Verify Installation
@@ -224,7 +226,7 @@ SHOW TRIGGERS LIKE 'leave_requests';
 
 1. **LEAVE_SYSTEM_IMPLEMENTATION.md** - Full technical documentation
 2. **QUICK_SETUP_GUIDE.md** - Quick setup instructions
-3. **database/leave_system_update.sql** - Database script to run
+3. **database/new_hr_schema.sql** - Database script to run
 4. **verify-leave-system.php** - Installation verification tool
 
 ---
@@ -276,7 +278,7 @@ All documentation is located in your project folder:
 
 **Implementation Date:** January 28, 2026
 **System Status:** Ready for Testing
-**Next Step:** Run database/leave_system_update.sql
+**Next Step:** Run database/new_hr_schema.sql
 
 ---
 

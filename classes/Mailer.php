@@ -152,6 +152,50 @@ class Mailer
     }
 
     /**
+     * Send Application Status Update Notification to Applicant
+     */
+    public function sendApplicationStatusUpdate(
+        $applicantEmail,
+        $applicantName,
+        $jobTitle,
+        $company,
+        $status
+    ) {
+        try {
+            $labels = [
+                'pending'     => ['label' => 'Pending Review', 'color' => '#6c757d', 'message' => 'Your application has been received and is pending review by our HR team.'],
+                'reviewed'    => ['label' => 'Reviewed', 'color' => '#17A2B8', 'message' => 'Your application has been reviewed by our HR team. We will be in touch with next steps soon.'],
+                'shortlisted' => ['label' => 'Shortlisted', 'color' => '#28A745', 'message' => "Congratulations! You've been shortlisted for this position. Watch your inbox for interview details."],
+                'rejected'    => ['label' => 'Not Selected', 'color' => '#C82333', 'message' => 'After careful consideration, we will not be moving forward with your application for this position at this time. We appreciate your interest and encourage you to apply for future openings.'],
+                'accepted'    => ['label' => 'Accepted', 'color' => '#28A745', 'message' => "Congratulations! You've been selected for this position. Details about your onboarding will be sent separately."],
+            ];
+            $info = $labels[$status] ?? ['label' => ucfirst($status), 'color' => '#6c757d', 'message' => 'Your application status has been updated.'];
+
+            $this->mail->clearAllRecipients();
+            $this->mail->addAddress($applicantEmail);
+            $this->mail->isHTML(true);
+            $this->mail->Subject = "Application Update - {$jobTitle} at {$company}";
+
+            $body = $this->getTemplate('application-status-update', [
+                'applicantName' => $applicantName,
+                'jobTitle'      => $jobTitle,
+                'company'       => $company,
+                'statusLabel'   => $info['label'],
+                'statusColor'   => $info['color'],
+                'statusMessage' => $info['message'],
+            ]);
+
+            $this->mail->Body    = $body;
+            $this->mail->AltBody = strip_tags($body);
+
+            return $this->mail->send();
+        } catch (Exception $e) {
+            error_log("Application status update notification error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Send New Applicant Notification to HR
      */
     public function sendNewApplicantNotification(
@@ -290,7 +334,7 @@ class Mailer
                 'password' => $password,
                 'position' => $position,
                 'department' => $department,
-                'dashboardUrl' => $this->getDashboardUrl()
+                'dashboardUrl' => $this->getStaffLoginUrl()
             ]);
 
             $this->mail->Body    = $body;
@@ -316,28 +360,37 @@ class Mailer
         $contractStartDate = ''
     ) {
         try {
-            if (empty($staffEmail)) {
+            if (empty($hrEmail)) {
                 return false;
             }
 
             $this->mail->clearAllRecipients();
-            $this->mail->addAddress($staffEmail);
+            $this->mail->addAddress($hrEmail);
 
-            if (!empty($hrEmail)) {
-                $this->mail->addCC($hrEmail);
+            if (!empty($staffEmail)) {
+                $this->mail->addCC($staffEmail);
             }
 
             $this->mail->isHTML(true);
-            $this->mail->Subject = 'Contract Ending Reminder - Action Required';
+            $this->mail->Subject = "Contract Ending Reminder - {$staffName}";
 
-            $body = $this->getTemplate('contract-ending-reminder', [
+            $days = (int) round((strtotime($contractEndDate) - strtotime(date('Y-m-d'))) / 86400);
+            if ($days < 0) {
+                $statusText = 'terminated ' . abs($days) . ' day' . (abs($days) === 1 ? '' : 's') . ' ago - contract has already ended';
+            } elseif ($days === 0) {
+                $statusText = 'terminated today';
+            } else {
+                $statusText = 'terminated in ' . $days . ' day' . ($days === 1 ? '' : 's');
+            }
+
+            $body = $this->getTemplate('contract-ending-reminder-hr', [
                 'staffName' => $staffName,
+                'statusText' => $statusText,
                 'contractStartDate' => $contractStartDate ? date('F d, Y', strtotime($contractStartDate)) : 'N/A',
                 'contractEndDate' => date('F d, Y', strtotime($contractEndDate)),
                 'position' => $position,
                 'department' => $department,
-                'dashboardUrl' => $this->getDashboardUrl(),
-                'hrEmail' => $hrEmail
+                'dashboardUrl' => $this->getHRDashboardUrl(),
             ]);
 
             $this->mail->Body    = $body;
@@ -499,6 +552,72 @@ class Mailer
         $basePath = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
 
         return $scheme . '://' . $host . ($basePath ? $basePath : '') . '/dashboard.php';
+    }
+
+    /**
+     * Build an absolute URL to the staff portal login page. Unlike
+     * getDashboardUrl(), this always points at staff/login.php regardless
+     * of which script (e.g. hr/pages/applicants.php) triggered the email -
+     * this is used for emails that are always about a staff account.
+     */
+    private function getStaffLoginUrl()
+    {
+        if (!isset($_SERVER['HTTP_HOST'], $_SERVER['SCRIPT_NAME'])) {
+            return 'staff/login.php';
+        }
+
+        $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || (isset($_SERVER['SERVER_PORT']) && (int) $_SERVER['SERVER_PORT'] === 443);
+        $scheme = $isHttps ? 'https' : 'http';
+        $host   = $_SERVER['HTTP_HOST'];
+
+        // Find the app's root by locating a known subfolder in the
+        // currently-running script's path, regardless of which page
+        // triggered the send (e.g. hr/pages/applicants.php -> strip back
+        // to before "/hr/pages/").
+        $scriptPath = str_replace('\\', '/', $_SERVER['SCRIPT_NAME']);
+        $appRoot = '';
+        foreach (['/hr/pages/', '/hr/', '/staff/', '/classes/'] as $marker) {
+            $pos = strpos($scriptPath, $marker);
+            if ($pos !== false) {
+                $appRoot = substr($scriptPath, 0, $pos);
+                break;
+            }
+        }
+
+        return $scheme . '://' . $host . $appRoot . '/staff/login.php';
+    }
+
+    /**
+     * Build an absolute URL to the HR dashboard (hr/index.php). Used by
+     * emails that are always about HR-side action (e.g. contract renewal
+     * reminders), including when sent from a CLI cron script that has no
+     * HTTP request context to derive a host from.
+     */
+    private function getHRDashboardUrl()
+    {
+        if (!isset($_SERVER['HTTP_HOST'], $_SERVER['SCRIPT_NAME'])) {
+            // No request context (e.g. running from a scheduled CLI task) -
+            // fall back to this app's known local dev URL.
+            return 'http://localhost/hr_management/hr/index.php';
+        }
+
+        $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || (isset($_SERVER['SERVER_PORT']) && (int) $_SERVER['SERVER_PORT'] === 443);
+        $scheme = $isHttps ? 'https' : 'http';
+        $host   = $_SERVER['HTTP_HOST'];
+
+        $scriptPath = str_replace('\\', '/', $_SERVER['SCRIPT_NAME']);
+        $appRoot = '';
+        foreach (['/hr/pages/', '/hr/', '/staff/', '/classes/'] as $marker) {
+            $pos = strpos($scriptPath, $marker);
+            if ($pos !== false) {
+                $appRoot = substr($scriptPath, 0, $pos);
+                break;
+            }
+        }
+
+        return $scheme . '://' . $host . $appRoot . '/hr/index.php';
     }
 
     /**

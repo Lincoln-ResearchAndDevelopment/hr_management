@@ -466,7 +466,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         @media (min-width: 1024px) {
             .signup-right {
                 display: block;
-                background-image: url('assets/img/signup-bg.jpg');
+                background-image: url('assets/img/signup-bg.svg');
             }
         }
 

@@ -215,12 +215,16 @@ class LeaveManager
             return false;
         }
 
-        $query = "INSERT INTO leave_allocations 
+        // This only needs to create the allocation row the first time a staff
+        // member is seen for a given leave type/year. On every later page
+        // load the row already exists and must be left untouched - an
+        // approved leave request's days_used/days_remaining must never be
+        // reset back to the full allocation just because this ran again.
+        $query = "INSERT INTO leave_allocations
                 (staff_id, leave_type_id, year, days_allocated, days_used, days_remaining, is_exhausted, has_used_one_time)
                 VALUES (?, ?, ?, ?, 0, ?, 0, 0)
                 ON DUPLICATE KEY UPDATE
-                days_allocated = VALUES(days_allocated),
-                days_remaining = VALUES(days_remaining)";
+                id = id";
 
         $stmt = $this->conn->prepare($query);
         $stmt->bind_param(

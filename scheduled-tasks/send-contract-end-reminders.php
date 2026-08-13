@@ -2,7 +2,9 @@
 
 /**
  * Contract End Reminder Scheduler
- * Sends reminders to staff one month before contract end date
+ * Reminds HR (primary recipient, staff CC'd) about every active staff
+ * contract ending within 30 days or already past due. Intended to run
+ * once per day via a scheduled task - see scheduled-tasks/SETUP.md.
  */
 
 include __DIR__ . '/../config.php';
@@ -26,6 +28,11 @@ if (!$column_lincoln_email || $column_lincoln_email->num_rows === 0 || !$column_
     exit(1);
 }
 
+// Reminds HR about every active staff contract ending within 30 days (or
+// already past due and not yet renewed) - this runs once per day (see
+// scheduled-tasks/README.md for how to schedule it) so HR keeps getting a
+// reminder every day until the contract is renewed (end date pushed out
+// past the 30-day window again), not just once.
 $target_date = date('Y-m-d', strtotime('+1 month'));
 
 $query = $conn->prepare(
@@ -42,9 +49,9 @@ $query = $conn->prepare(
      LEFT JOIN users u ON s.created_by = u.id
      WHERE s.status = 'active'
        AND s.contract_end_date IS NOT NULL
-       AND DATE(s.contract_end_date) = ?
-       AND s.lincoln_email IS NOT NULL
-       AND s.lincoln_email <> ''"
+       AND s.contract_end_date <= ?
+       AND u.email IS NOT NULL
+       AND u.email <> ''"
 );
 
 $query->bind_param("s", $target_date);
@@ -57,28 +64,29 @@ $errors = [];
 
 echo "Contract End Reminder Scheduler - " . date('Y-m-d H:i:s') . "\n";
 echo "===============================================\n";
-echo "Looking for contracts ending on: {$target_date}\n";
+echo "Looking for contracts ending on or before: {$target_date}\n";
 echo "Found: " . count($staff_list) . " staff record(s)\n\n";
 
 foreach ($staff_list as $staff) {
-    $staff_email = $staff['lincoln_email'];
+    $hr_email = $staff['hr_email'] ?? '';
+    $staff_email = $staff['lincoln_email'] ?? '';
     $staff_name = trim($staff['first_name'] . ' ' . $staff['last_name']);
 
     $sent = $mailer->sendContractEndingReminder(
         $staff_email,
         $staff_name,
         $staff['contract_end_date'],
-        $staff['hr_email'] ?? '',
+        $hr_email,
         $staff['position'] ?? '',
         $staff['department'] ?? '',
         $staff['contract_start_date'] ?? ''
     );
 
     if ($sent) {
-        echo "  OK Reminder sent to: {$staff_email}\n";
+        echo "  OK Reminder for {$staff_name} sent to HR ({$hr_email})\n";
         $reminders_sent++;
     } else {
-        $error_msg = "Failed to send reminder to {$staff_email}";
+        $error_msg = "Failed to send reminder for {$staff_name} to HR ({$hr_email})";
         echo "  ERROR {$error_msg}\n";
         $errors[] = $error_msg;
     }
