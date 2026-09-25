@@ -17,6 +17,54 @@ if (!$hr_auth->isHRLoggedIn()) {
 
 $leaveManager = new LeaveManager($conn);
 
+/**
+ * Email the staff member their leave decision. Sent to their Lincoln email
+ * once they have one (i.e. once hired); falls back to their personal email
+ * otherwise. Never throws - a mail failure must not block the HR action.
+ */
+function notifyStaffOfLeaveDecision($conn, $leave_detail, $status, $hr_remarks)
+{
+    try {
+        require_once '../../classes/Mailer.php';
+
+        $recipient = $leave_detail['lincoln_email'] ?: $leave_detail['email'];
+        if (empty($recipient)) {
+            return;
+        }
+
+        $mailer = new Mailer();
+        $mailer->sendLeaveStatusUpdate(
+            $recipient,
+            trim($leave_detail['first_name'] . ' ' . $leave_detail['last_name']),
+            $leave_detail['leave_type_name'],
+            $leave_detail['start_date'],
+            $leave_detail['end_date'],
+            $leave_detail['total_days'],
+            $status,
+            $hr_remarks
+        );
+    } catch (Throwable $e) {
+        error_log('Failed to notify staff of leave decision: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Friendly label for a request's status. Leave requests carry two extra
+ * in-between statuses ('hod_approved'/'hod_rejected') while they wait on
+ * HR's final decision after the Head of Department has given theirs.
+ */
+function requestStatusLabel($status)
+{
+    $labels = [
+        'pending'      => 'Pending',
+        'hod_approved' => 'HOD Approved - Awaiting HR',
+        'hod_rejected' => 'HOD Rejected - Awaiting HR',
+        'approved'     => 'Approved',
+        'rejected'     => 'Rejected',
+    ];
+    return $labels[$status] ?? ucfirst($status);
+}
+
 $message = '';
 $message_type = '';
 $filter_type = $_GET['type'] ?? 'all';
@@ -40,21 +88,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if (!empty($table)) {
+            // Capture the leave details needed for the staff notification
+            // email before the status changes, so we don't have to guess
+            // which row the update touched.
+            $leave_email_detail = null;
+            if ($request_type === 'leave') {
+                $detail_stmt = $conn->prepare(
+                    "SELECT lr.start_date, lr.end_date, lr.total_days, lt.name as leave_type_name,
+                            s.first_name, s.last_name, s.email, s.lincoln_email
+                     FROM leave_requests lr
+                     JOIN leave_types lt ON lt.id = lr.leave_type_id
+                     JOIN staff s ON s.id = lr.staff_id
+                     WHERE lr.id = ?"
+                );
+                $detail_stmt->bind_param('i', $request_id);
+                $detail_stmt->execute();
+                $leave_email_detail = $detail_stmt->get_result()->fetch_assoc();
+            }
+
+            // A leave request can only get HR's final decision after its
+            // Head of Department has made theirs - HR is never the first
+            // stop. Guard the update itself (not just the UI) so a crafted
+            // POST can't skip the HOD stage.
+            $leave_guard = $table === 'leave_requests' ? " AND status IN ('hod_approved', 'hod_rejected')" : '';
+
             if ($action === 'approve') {
-                $stmt = $conn->prepare("UPDATE $table SET status = 'approved', hr_remarks = ?, updated_at = NOW() WHERE id = ?");
+                $stmt = $conn->prepare("UPDATE $table SET status = 'approved', hr_remarks = ?, updated_at = NOW() WHERE id = ?" . $leave_guard);
                 $stmt->bind_param('si', $admin_remarks, $request_id);
-                if ($stmt->execute()) {
+                if ($stmt->execute() && $stmt->affected_rows > 0) {
                     $message = 'Request approved successfully.';
                     $message_type = 'success';
+                    if ($leave_email_detail) {
+                        notifyStaffOfLeaveDecision($conn, $leave_email_detail, 'approved', $admin_remarks);
+                    }
+                } elseif ($stmt->errno === 0 && $table === 'leave_requests') {
+                    $message = 'This request is still awaiting Head of Department review and cannot be finalized yet.';
+                    $message_type = 'danger';
                 } else {
                     $message = 'Error approving request.';
                     $message_type = 'danger';
                 }
             } elseif ($action === 'reject') {
-                $stmt = $conn->prepare("UPDATE $table SET status = 'rejected', hr_remarks = ?, updated_at = NOW() WHERE id = ?");
+                $stmt = $conn->prepare("UPDATE $table SET status = 'rejected', hr_remarks = ?, updated_at = NOW() WHERE id = ?" . $leave_guard);
                 $stmt->bind_param('si', $admin_remarks, $request_id);
-                if ($stmt->execute()) {
+                if ($stmt->execute() && $stmt->affected_rows > 0) {
                     $message = 'Request rejected successfully.';
+                    $message_type = 'danger';
+                    if ($leave_email_detail) {
+                        notifyStaffOfLeaveDecision($conn, $leave_email_detail, 'rejected', $admin_remarks);
+                    }
+                } elseif ($stmt->errno === 0 && $table === 'leave_requests') {
+                    $message = 'This request is still awaiting Head of Department review and cannot be finalized yet.';
                     $message_type = 'danger';
                 } else {
                     $message = 'Error rejecting request.';
@@ -82,14 +166,14 @@ if ($check_total_days && $check_total_days->num_rows > 0) {
 // Build queries based on schema
 if ($leave_type_column_exists && $total_days_column_exists) {
     // New schema with leave_type_id and total_days
-    $late_arrival_query = "SELECT id, staff_id, request_date, late_arrival_time, NULL as second_time, NULL as start_date, NULL as end_date, NULL as total_days, NULL as leave_type_id, NULL as supporting_documents, reason, status, created_at, hr_remarks, 'late_arrival' as request_type FROM late_arrival_requests";
-    $temp_exit_query = "SELECT id, staff_id, request_date, start_time, end_time, NULL as start_date, NULL as end_date, NULL as total_days, NULL as leave_type_id, NULL as supporting_documents, reason, status, created_at, hod_remarks as hr_remarks, 'temporary_exit' as request_type FROM temporary_exit_requests";
-    $leave_query = "SELECT id, staff_id, request_date, NULL as late_arrival_time, NULL as second_time, start_date, end_date, total_days, leave_type_id, supporting_documents, reason, status, created_at, hr_remarks, 'leave' as request_type FROM leave_requests";
+    $late_arrival_query = "SELECT id, staff_id, request_date, late_arrival_time, NULL as second_time, NULL as start_date, NULL as end_date, NULL as total_days, NULL as leave_type_id, NULL as supporting_documents, reason, status, created_at, hr_remarks, NULL as leave_hod_remarks, 'late_arrival' as request_type FROM late_arrival_requests";
+    $temp_exit_query = "SELECT id, staff_id, request_date, start_time, end_time, NULL as start_date, NULL as end_date, NULL as total_days, NULL as leave_type_id, NULL as supporting_documents, reason, status, created_at, hod_remarks as hr_remarks, NULL as leave_hod_remarks, 'temporary_exit' as request_type FROM temporary_exit_requests";
+    $leave_query = "SELECT id, staff_id, request_date, NULL as late_arrival_time, NULL as second_time, start_date, end_date, total_days, leave_type_id, supporting_documents, reason, status, created_at, hr_remarks, hod_remarks as leave_hod_remarks, 'leave' as request_type FROM leave_requests";
 } else {
     // Old schema without leave_type_id
-    $late_arrival_query = "SELECT id, staff_id, request_date, late_arrival_time, NULL as second_time, NULL as start_date, NULL as end_date, NULL as supporting_documents, reason, status, created_at, hr_remarks, 'late_arrival' as request_type FROM late_arrival_requests";
-    $temp_exit_query = "SELECT id, staff_id, request_date, start_time, end_time, NULL as start_date, NULL as end_date, NULL as supporting_documents, reason, status, created_at, hod_remarks as hr_remarks, 'temporary_exit' as request_type FROM temporary_exit_requests";
-    $leave_query = "SELECT id, staff_id, request_date, NULL as late_arrival_time, NULL as second_time, start_date, end_date, NULL as supporting_documents, reason, status, created_at, hr_remarks, 'leave' as request_type FROM leave_requests";
+    $late_arrival_query = "SELECT id, staff_id, request_date, late_arrival_time, NULL as second_time, NULL as start_date, NULL as end_date, NULL as supporting_documents, reason, status, created_at, hr_remarks, NULL as leave_hod_remarks, 'late_arrival' as request_type FROM late_arrival_requests";
+    $temp_exit_query = "SELECT id, staff_id, request_date, start_time, end_time, NULL as start_date, NULL as end_date, NULL as supporting_documents, reason, status, created_at, hod_remarks as hr_remarks, NULL as leave_hod_remarks, 'temporary_exit' as request_type FROM temporary_exit_requests";
+    $leave_query = "SELECT id, staff_id, request_date, NULL as late_arrival_time, NULL as second_time, start_date, end_date, NULL as supporting_documents, reason, status, created_at, hr_remarks, hod_remarks as leave_hod_remarks, 'leave' as request_type FROM leave_requests";
 }
 
 // Build the query based on filters
@@ -387,6 +471,16 @@ unset($req);
         .status-pending {
             background: #fff3cd;
             color: #856404;
+        }
+
+        .status-hod_approved {
+            background: #cce5ff;
+            color: #004085;
+        }
+
+        .status-hod_rejected {
+            background: #ffe5d0;
+            color: #8a4b00;
         }
 
         .status-approved {
@@ -741,6 +835,8 @@ unset($req);
                 <select id="filterStatus" onchange="updateFilter()">
                     <option value="all" <?php echo $filter_status === 'all' ? 'selected' : ''; ?>>All Status</option>
                     <option value="pending" <?php echo $filter_status === 'pending' ? 'selected' : ''; ?>>Pending</option>
+                    <option value="hod_approved" <?php echo $filter_status === 'hod_approved' ? 'selected' : ''; ?>>HOD Approved (Awaiting HR)</option>
+                    <option value="hod_rejected" <?php echo $filter_status === 'hod_rejected' ? 'selected' : ''; ?>>HOD Rejected (Awaiting HR)</option>
                     <option value="approved" <?php echo $filter_status === 'approved' ? 'selected' : ''; ?>>Approved</option>
                     <option value="rejected" <?php echo $filter_status === 'rejected' ? 'selected' : ''; ?>>Rejected</option>
                 </select>
@@ -766,7 +862,7 @@ unset($req);
                                 <?php echo str_replace('_', ' ', ucfirst($req['request_type'])); ?>
                             </span>
                             <span class="status-badge status-<?php echo $req['status']; ?>">
-                                <?php echo ucfirst($req['status']); ?>
+                                <?php echo requestStatusLabel($req['status']); ?>
                             </span>
                         </div>
                     </div>
@@ -849,6 +945,16 @@ unset($req);
                         </div>
                     </div>
 
+                    <?php if ($req['request_type'] === 'leave' && !empty($req['leave_hod_remarks'])): ?>
+                        <div class="remarks-section" style="border-left-color: #0d6efd; background: #eef6ff;">
+                            <h4 style="color: #0d6efd;">
+                                HOD Decision:
+                                <?php echo $req['status'] === 'hod_rejected' ? 'Rejected' : 'Approved'; ?>
+                            </h4>
+                            <p><?php echo nl2br(htmlspecialchars($req['leave_hod_remarks'])); ?></p>
+                        </div>
+                    <?php endif; ?>
+
                     <?php if (!empty($req['hr_remarks'])): ?>
                         <div class="remarks-section">
                             <h4>HR Remarks</h4>
@@ -856,7 +962,12 @@ unset($req);
                         </div>
                     <?php endif; ?>
 
-                    <?php if ($req['status'] === 'pending'): ?>
+                    <?php if ($req['request_type'] === 'leave' && $req['status'] === 'pending'): ?>
+                        <div class="remarks-section" style="border-left-color: #ffc107; background: #fffaf0;">
+                            <h4 style="color: #856404;"><i class="fas fa-hourglass-half"></i> Awaiting Head of Department Review</h4>
+                            <p>This request hasn't been reviewed by the staff member's HOD yet, so it can't be finalized here.</p>
+                        </div>
+                    <?php elseif (($req['request_type'] === 'leave' && in_array($req['status'], ['hod_approved', 'hod_rejected'], true)) || ($req['request_type'] !== 'leave' && $req['status'] === 'pending')): ?>
                         <div class="action-buttons">
                             <button class="btn btn-approve" onclick="openModal(<?php echo $req['id']; ?>, '<?php echo $req['request_type']; ?>', 'approve')">
                                 <i class="fas fa-check"></i> Approve

@@ -234,6 +234,158 @@ class Mailer
     }
 
     /**
+     * Send New Leave Request Notification to a reviewer - either the
+     * requester's Head of Department (first stop) or, as a fallback when
+     * no HOD is on record, HR directly. $forHod picks which dashboard the
+     * email links to, since a staff-only HOD account can't reach HR's.
+     */
+    public function sendLeaveRequestNotification(
+        $hrEmail,
+        $hrName,
+        $staffName,
+        $position,
+        $department,
+        $leaveTypeName,
+        $startDate,
+        $endDate,
+        $totalDays,
+        $reason,
+        $forHod = false
+    ) {
+        try {
+            $this->mail->clearAllRecipients();
+            $this->mail->addAddress($hrEmail);
+            $this->mail->isHTML(true);
+            $this->mail->Subject = "New Leave Request - {$staffName}";
+
+            $body = $this->getTemplate('leave-request-notification', [
+                'hrName'        => $hrName,
+                'staffName'     => $staffName,
+                'position'      => $position,
+                'department'    => $department,
+                'leaveTypeName' => $leaveTypeName,
+                'startDate'     => date('F d, Y', strtotime($startDate)),
+                'endDate'       => date('F d, Y', strtotime($endDate)),
+                'totalDays'     => $totalDays,
+                'reason'        => $reason,
+                'dashboardUrl'  => $forHod ? $this->getStaffHodDashboardUrl() : $this->getHRDashboardUrl(),
+            ]);
+
+            $this->mail->Body    = $body;
+            $this->mail->AltBody = strip_tags($body);
+
+            return $this->mail->send();
+        } catch (Exception $e) {
+            error_log("Leave request notification error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Send HOD Leave Decision Notification to HR - the Head of Department
+     * has made their (non-final) call, and it's now HR's turn to give the
+     * final approve/reject decision.
+     */
+    public function sendLeaveHodDecisionNotification(
+        $hrEmail,
+        $hrName,
+        $staffName,
+        $position,
+        $department,
+        $leaveTypeName,
+        $startDate,
+        $endDate,
+        $totalDays,
+        $hodName,
+        $hodDecision,
+        $hodRemarks = ''
+    ) {
+        try {
+            $labels = [
+                'hod_approved' => ['label' => 'Approved', 'color' => '#28A745'],
+                'hod_rejected' => ['label' => 'Rejected', 'color' => '#C82333'],
+            ];
+            $info = $labels[$hodDecision] ?? ['label' => ucfirst($hodDecision), 'color' => '#6c757d'];
+
+            $this->mail->clearAllRecipients();
+            $this->mail->addAddress($hrEmail);
+            $this->mail->isHTML(true);
+            $this->mail->Subject = "HOD {$info['label']} Leave Request - {$staffName} (Awaiting Your Decision)";
+
+            $body = $this->getTemplate('leave-hod-decision-notification', [
+                'hrName'          => $hrName,
+                'staffName'       => $staffName,
+                'position'        => $position,
+                'department'      => $department,
+                'leaveTypeName'   => $leaveTypeName,
+                'startDate'       => date('F d, Y', strtotime($startDate)),
+                'endDate'         => date('F d, Y', strtotime($endDate)),
+                'totalDays'       => $totalDays,
+                'hodName'         => $hodName,
+                'hodDecisionLabel' => $info['label'],
+                'hodDecisionColor' => $info['color'],
+                'hodRemarks'      => $hodRemarks !== '' ? $hodRemarks : 'No remarks provided',
+                'dashboardUrl'    => $this->getHRDashboardUrl(),
+            ]);
+
+            $this->mail->Body    = $body;
+            $this->mail->AltBody = strip_tags($body);
+
+            return $this->mail->send();
+        } catch (Exception $e) {
+            error_log("HOD leave decision notification error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Send Leave Request Status Update to Staff (approved/rejected)
+     */
+    public function sendLeaveStatusUpdate(
+        $staffEmail,
+        $staffName,
+        $leaveTypeName,
+        $startDate,
+        $endDate,
+        $totalDays,
+        $status,
+        $hrRemarks = ''
+    ) {
+        try {
+            $labels = [
+                'approved' => ['label' => 'Approved', 'color' => '#28A745', 'message' => 'Your leave request has been approved.'],
+                'rejected' => ['label' => 'Rejected', 'color' => '#C82333', 'message' => 'Your leave request has been rejected.'],
+            ];
+            $info = $labels[$status] ?? ['label' => ucfirst($status), 'color' => '#6c757d', 'message' => 'Your leave request status has been updated.'];
+
+            $this->mail->clearAllRecipients();
+            $this->mail->addAddress($staffEmail);
+            $this->mail->isHTML(true);
+            $this->mail->Subject = "Leave Request {$info['label']} - {$leaveTypeName}";
+
+            $body = $this->getTemplate('leave-status-update', [
+                'staffName'     => $staffName,
+                'leaveTypeName' => $leaveTypeName,
+                'startDate'     => date('F d, Y', strtotime($startDate)),
+                'endDate'       => date('F d, Y', strtotime($endDate)),
+                'totalDays'     => $totalDays,
+                'statusLabel'   => $info['label'],
+                'statusColor'   => $info['color'],
+                'statusMessage' => $info['message'],
+                'hrRemarks'     => $hrRemarks !== '' ? $hrRemarks : 'No remarks provided',
+            ]);
+
+            $this->mail->Body    = $body;
+            $this->mail->AltBody = strip_tags($body);
+
+            return $this->mail->send();
+        } catch (Exception $e) {
+            error_log("Leave status update notification error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Send Interview Reminder (24 hours before)
      */
     public function sendInterviewReminder(
@@ -508,6 +660,8 @@ class Mailer
                         <p>Best regards,<br>
                         <strong>HR Department</strong><br>
                         Lincoln University College</p>
+
+                        <p style='margin-top: 20px; font-size: 12px; color: #999;'>This is an automated email, please do not reply directly.</p>
                     </div>
                 </div>
             </body>
@@ -586,6 +740,36 @@ class Mailer
         }
 
         return $scheme . '://' . $host . $appRoot . '/staff/login.php';
+    }
+
+    /**
+     * Build an absolute URL to a Head of Department's leave review page
+     * (staff/hod-dashboard.php). Same app-root detection as
+     * getStaffLoginUrl() - this is always about a staff account, regardless
+     * of which script triggered the email.
+     */
+    private function getStaffHodDashboardUrl()
+    {
+        if (!isset($_SERVER['HTTP_HOST'], $_SERVER['SCRIPT_NAME'])) {
+            return 'staff/hod-dashboard.php';
+        }
+
+        $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || (isset($_SERVER['SERVER_PORT']) && (int) $_SERVER['SERVER_PORT'] === 443);
+        $scheme = $isHttps ? 'https' : 'http';
+        $host   = $_SERVER['HTTP_HOST'];
+
+        $scriptPath = str_replace('\\', '/', $_SERVER['SCRIPT_NAME']);
+        $appRoot = '';
+        foreach (['/hr/pages/', '/hr/', '/staff/', '/classes/'] as $marker) {
+            $pos = strpos($scriptPath, $marker);
+            if ($pos !== false) {
+                $appRoot = substr($scriptPath, 0, $pos);
+                break;
+            }
+        }
+
+        return $scheme . '://' . $host . $appRoot . '/staff/hod-dashboard.php';
     }
 
     /**

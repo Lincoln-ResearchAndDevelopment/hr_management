@@ -249,12 +249,10 @@ $disciplinary_list = $disciplinary_result->fetch_all(MYSQLI_ASSOC);
                         <div class="col-md-3 mb-3">
                             <label class="form-label">Action Type <span class="text-danger">*</span></label>
                             <select name="action_type" class="form-select" required>
-                                <option value="query">Query</option>
                                 <option value="warning">Warning</option>
                                 <option value="written_warning">Written Warning</option>
-                                <option value="suspension">Suspension</option>
-                                <option value="demotion">Demotion</option>
-                                <option value="termination">Termination Notice</option>
+                                <option value="query">Query</option>
+                                <option value="disciplinary_action">Disciplinary Action</option>
                             </select>
                         </div>
 

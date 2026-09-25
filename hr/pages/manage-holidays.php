@@ -7,7 +7,7 @@ include '../classes/HRAuth.php';
 $hrAuth = new HRAuth($conn);
 $current_hr = $hrAuth->getCurrentHR();
 if (!$current_hr) {
-    header('Location: login.php');
+    header('Location: ../login.php');
     exit;
 }
 
@@ -28,6 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['action']) && $_POST['action'] === 'add_holiday') {
         $name = trim($_POST['name'] ?? '');
         $holiday_date = trim($_POST['holiday_date'] ?? '');
+        $end_date = trim($_POST['end_date'] ?? '') ?: $holiday_date;
         $campus_location = trim($_POST['campus_location'] ?? '');
         $description = trim($_POST['description'] ?? '');
 
@@ -37,18 +38,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $campus_location = '';
         }
 
-        if (empty($name) || empty($holiday_date)) {
-            $message = 'Please provide both a holiday name and a date.';
+        $start_dt = DateTime::createFromFormat('Y-m-d', $holiday_date) ?: null;
+        $end_dt = DateTime::createFromFormat('Y-m-d', $end_date) ?: null;
+
+        if (empty($name) || empty($holiday_date) || !$start_dt || !$end_dt) {
+            $message = 'Please provide a holiday name and a valid date.';
+            $message_type = 'danger';
+        } elseif ($end_dt < $start_dt) {
+            $message = 'End date cannot be before the start date.';
+            $message_type = 'danger';
+        } elseif ($start_dt->diff($end_dt)->days > 30) {
+            $message = 'A single holiday entry can span at most 31 days. Please split longer breaks into separate entries.';
             $message_type = 'danger';
         } else {
+            // A multi-day holiday is stored as one row per calendar day so
+            // every existing leave/attendance query - which only ever checks
+            // a single holiday_date - excludes each day automatically
+            // without needing to understand date ranges.
             $campus_param = $campus_location !== '' ? $campus_location : null;
             $insert = $conn->prepare(
                 "INSERT INTO public_holidays (name, holiday_date, campus_location, description, created_by) VALUES (?, ?, ?, ?, ?)"
             );
-            $insert->bind_param('ssssi', $name, $holiday_date, $campus_param, $description, $user['id']);
 
-            if ($insert->execute()) {
-                $message = 'Public holiday added. Leave requests and attendance totals will exclude this date automatically.';
+            $day_count = 0;
+            $cursor = clone $start_dt;
+            while ($cursor <= $end_dt) {
+                $date_str = $cursor->format('Y-m-d');
+                $insert->bind_param('ssssi', $name, $date_str, $campus_param, $description, $user['id']);
+                if ($insert->execute()) {
+                    $day_count++;
+                }
+                $cursor->modify('+1 day');
+            }
+
+            if ($day_count > 0) {
+                $message = $day_count > 1
+                    ? "Public holiday added across {$day_count} days. Leave requests and attendance totals will exclude these dates automatically."
+                    : 'Public holiday added. Leave requests and attendance totals will exclude this date automatically.';
                 $message_type = 'success';
             } else {
                 $message = 'Failed to add holiday: ' . htmlspecialchars($conn->error);
@@ -56,12 +82,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     } elseif (isset($_POST['action']) && $_POST['action'] === 'delete_holiday') {
-        $holiday_id = (int) ($_POST['holiday_id'] ?? 0);
-        if ($holiday_id > 0) {
-            $delete = $conn->prepare("DELETE FROM public_holidays WHERE id = ?");
-            $delete->bind_param('i', $holiday_id);
+        $holiday_ids = array_filter(array_map('intval', explode(',', $_POST['holiday_ids'] ?? '')));
+        if (!empty($holiday_ids)) {
+            $placeholders = implode(',', array_fill(0, count($holiday_ids), '?'));
+            $types = str_repeat('i', count($holiday_ids));
+            $delete = $conn->prepare("DELETE FROM public_holidays WHERE id IN ($placeholders)");
+            $delete->bind_param($types, ...$holiday_ids);
             if ($delete->execute()) {
-                $message = 'Holiday removed.';
+                $message = count($holiday_ids) > 1 ? 'Holidays removed.' : 'Holiday removed.';
                 $message_type = 'success';
             }
         }
@@ -74,7 +102,29 @@ $holidays_query = "SELECT ph.*, u.first_name, u.last_name
                     LEFT JOIN users u ON ph.created_by = u.id
                     ORDER BY ph.holiday_date ASC";
 $holidays_result = $conn->query($holidays_query);
-$holidays_list = $holidays_result ? $holidays_result->fetch_all(MYSQLI_ASSOC) : [];
+$holidays_rows = $holidays_result ? $holidays_result->fetch_all(MYSQLI_ASSOC) : [];
+
+// A multi-day holiday is stored as one row per day - fold consecutive rows
+// that share a name/campus/description back into a single card with a
+// start/end date range and the full set of row ids (for deleting together).
+$holidays_list = [];
+foreach ($holidays_rows as $row) {
+    $prev = end($holidays_list);
+    $is_continuation = $prev
+        && $prev['name'] === $row['name']
+        && $prev['campus_location'] === $row['campus_location']
+        && $prev['description'] === $row['description']
+        && date('Y-m-d', strtotime($prev['end_date'] . ' +1 day')) === $row['holiday_date'];
+
+    if ($is_continuation) {
+        $holidays_list[count($holidays_list) - 1]['end_date'] = $row['holiday_date'];
+        $holidays_list[count($holidays_list) - 1]['ids'][] = $row['id'];
+    } else {
+        $row['end_date'] = $row['holiday_date'];
+        $row['ids'] = [$row['id']];
+        $holidays_list[] = $row;
+    }
+}
 
 $today = date('Y-m-d');
 ?>
@@ -402,9 +452,14 @@ $today = date('Y-m-d');
                             <div class="field-label">Holiday Name</div>
                             <input type="text" class="premium-input" name="name" placeholder="e.g., Independence Day" required>
                         </div>
-                        <div class="col-md-6 mb-4">
-                            <div class="field-label">Date</div>
-                            <input type="date" class="premium-input" name="holiday_date" required>
+                        <div class="col-md-3 mb-4">
+                            <div class="field-label">Start Date</div>
+                            <input type="date" class="premium-input" name="holiday_date" id="holidayStartDate" required>
+                        </div>
+                        <div class="col-md-3 mb-4">
+                            <div class="field-label">End Date <span class="text-muted" style="font-weight: 400;">(optional)</span></div>
+                            <input type="date" class="premium-input" name="end_date" id="holidayEndDate">
+                            <small class="text-muted">Leave blank for a single-day holiday.</small>
                         </div>
                     </div>
 
@@ -444,7 +499,10 @@ $today = date('Y-m-d');
                     </div>
                 <?php else: ?>
                     <?php foreach ($holidays_list as $holiday): ?>
-                        <?php $is_past = $holiday['holiday_date'] < $today; ?>
+                        <?php
+                        $is_past = $holiday['end_date'] < $today;
+                        $is_multi_day = $holiday['end_date'] !== $holiday['holiday_date'];
+                        ?>
                         <div class="holiday-card <?php echo $is_past ? 'past' : ''; ?>">
                             <div class="holiday-date-box">
                                 <div class="day"><?php echo date('d', strtotime($holiday['holiday_date'])); ?></div>
@@ -458,9 +516,16 @@ $today = date('Y-m-d');
                                     <?php else: ?>
                                         <span class="campus-badge specific"><i class="fas fa-map-marker-alt"></i> <?php echo htmlspecialchars($holiday['campus_location']); ?></span>
                                     <?php endif; ?>
+                                    <?php if ($is_multi_day): ?>
+                                        <span class="campus-badge all"><i class="fas fa-calendar-week"></i> <?php echo count($holiday['ids']); ?> days</span>
+                                    <?php endif; ?>
                                 </h5>
                                 <small>
-                                    <?php echo date('l, F j, Y', strtotime($holiday['holiday_date'])); ?>
+                                    <?php if ($is_multi_day): ?>
+                                        <?php echo date('l, F j', strtotime($holiday['holiday_date'])); ?> &ndash; <?php echo date('l, F j, Y', strtotime($holiday['end_date'])); ?>
+                                    <?php else: ?>
+                                        <?php echo date('l, F j, Y', strtotime($holiday['holiday_date'])); ?>
+                                    <?php endif; ?>
                                     <?php if (!empty($holiday['description'])): ?>
                                         &middot; <?php echo htmlspecialchars($holiday['description']); ?>
                                     <?php endif; ?>
@@ -472,7 +537,7 @@ $today = date('Y-m-d');
                             <form method="POST" action="" style="display: inline;"
                                 onsubmit="return confirm('Remove this holiday? It will no longer be excluded from leave and attendance calculations.');">
                                 <input type="hidden" name="action" value="delete_holiday">
-                                <input type="hidden" name="holiday_id" value="<?php echo $holiday['id']; ?>">
+                                <input type="hidden" name="holiday_ids" value="<?php echo htmlspecialchars(implode(',', $holiday['ids'])); ?>">
                                 <button type="submit" class="btn btn-pill btn-delete">
                                     <i class="fas fa-trash"></i> Delete
                                 </button>
@@ -486,6 +551,17 @@ $today = date('Y-m-d');
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        const holidayStartDate = document.getElementById('holidayStartDate');
+        const holidayEndDate = document.getElementById('holidayEndDate');
+        if (holidayStartDate && holidayEndDate) {
+            holidayStartDate.addEventListener('change', function() {
+                holidayEndDate.min = this.value;
+                if (holidayEndDate.value && holidayEndDate.value < this.value) {
+                    holidayEndDate.value = this.value;
+                }
+            });
+        }
+
         const toggleBtn = document.getElementById('toggleBtn');
         const sidebar = document.getElementById('sidebar');
         const topbar = document.getElementById('topbar');

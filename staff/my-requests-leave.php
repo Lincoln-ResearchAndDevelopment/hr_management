@@ -51,6 +51,7 @@ $has_leave_type_column = $column_check && $column_check->num_rows > 0;
 if ($has_leave_type_column && $filter_leave_type) {
     $requests_query = $conn->prepare(
         "SELECT lr.id, lr.request_date, lr.start_date, lr.end_date, lr.total_days, lr.reason, lr.status, lr.created_at,
+                lr.hod_remarks, lr.hr_remarks,
                 lt.name as leave_type_name
          FROM leave_requests lr
          LEFT JOIN leave_types lt ON lr.leave_type_id = lt.id
@@ -61,6 +62,7 @@ if ($has_leave_type_column && $filter_leave_type) {
 } elseif ($has_leave_type_column) {
     $requests_query = $conn->prepare(
         "SELECT lr.id, lr.request_date, lr.start_date, lr.end_date, lr.total_days, lr.reason, lr.status, lr.created_at,
+                lr.hod_remarks, lr.hr_remarks,
                 lt.name as leave_type_name
          FROM leave_requests lr
          LEFT JOIN leave_types lt ON lr.leave_type_id = lt.id
@@ -71,9 +73,10 @@ if ($has_leave_type_column && $filter_leave_type) {
 } else {
     $requests_query = $conn->prepare(
         "SELECT id, request_date, start_date, end_date, total_days, reason, status, created_at,
+                hod_remarks, hr_remarks,
                 'N/A' as leave_type_name
-         FROM leave_requests 
-         WHERE staff_id = ? 
+         FROM leave_requests
+         WHERE staff_id = ?
          ORDER BY created_at DESC"
     );
     $requests_query->bind_param("i", $staff_id);
@@ -81,6 +84,21 @@ if ($has_leave_type_column && $filter_leave_type) {
 
 $requests_query->execute();
 $requests = $requests_query->get_result()->fetch_all(MYSQLI_ASSOC);
+
+/**
+ * Friendly label for a leave request's two-stage (HOD then HR) status.
+ */
+function leaveStatusLabel($status)
+{
+    $labels = [
+        'pending'      => 'Pending HOD Review',
+        'hod_approved' => 'HOD Approved - Awaiting HR',
+        'hod_rejected' => 'HOD Rejected - Awaiting HR',
+        'approved'     => 'Approved',
+        'rejected'     => 'Rejected',
+    ];
+    return $labels[$status] ?? ucfirst($status);
+}
 
 ?>
 <!DOCTYPE html>
@@ -396,6 +414,16 @@ $requests = $requests_query->get_result()->fetch_all(MYSQLI_ASSOC);
             color: #856404;
         }
 
+        .status-hod_approved {
+            background-color: #cce5ff;
+            color: #004085;
+        }
+
+        .status-hod_rejected {
+            background-color: #ffe5d0;
+            color: #8a4b00;
+        }
+
         .status-approved {
             background-color: #d4edda;
             color: #155724;
@@ -509,6 +537,14 @@ $requests = $requests_query->get_result()->fetch_all(MYSQLI_ASSOC);
                     <span>My Profile</span>
                 </a>
             </li>
+            <?php if (LeaveManager::isHeadOfDepartment($staff['position'] ?? '')): ?>
+                <li>
+                    <a href="hod-dashboard.php">
+                        <i class="fas fa-user-tie"></i>
+                        <span>HOD Dashboard</span>
+                    </a>
+                </li>
+            <?php endif; ?>
             <li style="border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 15px; margin-top: 10px;">
                 <a href="handbook.php">
                     <i class="fas fa-book"></i>
@@ -619,6 +655,7 @@ $requests = $requests_query->get_result()->fetch_all(MYSQLI_ASSOC);
                             <th>End Date</th>
                             <th>Total Days</th>
                             <th>Status</th>
+                            <th>Remarks</th>
                             <th>Requested On</th>
                         </tr>
                     </thead>
@@ -633,8 +670,18 @@ $requests = $requests_query->get_result()->fetch_all(MYSQLI_ASSOC);
                                 <td><?php echo $request['total_days']; ?> days</td>
                                 <td>
                                     <span class="status-badge status-<?php echo $request['status']; ?>">
-                                        <?php echo ucfirst($request['status']); ?>
+                                        <?php echo leaveStatusLabel($request['status']); ?>
                                     </span>
+                                </td>
+                                <td>
+                                    <?php
+                                    // Show whichever remark is currently relevant: HR's once
+                                    // there is a final decision, otherwise the HOD's.
+                                    $shown_remarks = in_array($request['status'], ['approved', 'rejected'], true)
+                                        ? ($request['hr_remarks'] ?? '')
+                                        : ($request['hod_remarks'] ?? '');
+                                    echo $shown_remarks !== '' ? nl2br(htmlspecialchars($shown_remarks)) : '<span class="text-muted">-</span>';
+                                    ?>
                                 </td>
                                 <td><?php echo date('M d, Y', strtotime($request['created_at'])); ?></td>
                             </tr>

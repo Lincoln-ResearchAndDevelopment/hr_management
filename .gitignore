@@ -12,6 +12,9 @@ uploads/contracts/*
 uploads/handbook/*
 !uploads/handbook/.gitkeep
 
+# Local secrets (SMTP password)
+mail-config.local.php
+
 # OS/editor cruft
 Thumbs.db
 .DS_Store

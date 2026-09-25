@@ -37,6 +37,11 @@
 --   8. public_holidays table added - new feature, HR schedules public
 --      holidays (all campuses or one specific campus), excluded from leave
 --      day counts and attendance working-day totals alongside weekends.
+--   9. leave_requests.status gained 'hod_approved'/'hod_rejected' - new
+--      feature, a staff member's Head of Department now reviews a leave
+--      request first; HR gives the final approve/reject decision after.
+--      Against an existing database, run
+--      database/migration_hod_leave_approval.sql instead of this file.
 --
 -- This file contains structure and safe seed data only. No staff records,
 -- contract history, or session tokens from the source database.
@@ -472,7 +477,7 @@ CREATE TABLE `leave_requests` (
   `reason` text NOT NULL,
   `substitute_staff_id` int(11) DEFAULT NULL,
   `supporting_documents` varchar(255) DEFAULT NULL,
-  `status` enum('pending','approved','rejected') DEFAULT 'pending',
+  `status` enum('pending','hod_approved','hod_rejected','approved','rejected') DEFAULT 'pending',
   `substitute_status` enum('pending','accepted','rejected') DEFAULT NULL,
   `days_used` int(11) DEFAULT 0,
   `hod_remarks` text DEFAULT NULL,
@@ -1247,15 +1252,15 @@ INSERT INTO `leave_types`
   (name, description, days_allocated, allocation_unit, min_days, max_days,
    is_paid, requires_approval, is_unlimited, is_one_time, gender_specific, is_active)
 VALUES
-('Annual Leave', 'Annual vacation leave - 14 days at a stretch, minimum 7 days', 14, 'days', 7, 14, 1, 1, 0, 0, 'none', 1),
-('Maternity Leave', 'For female staff during pregnancy and childbirth - 2 to 4 weeks', 28, 'days', 14, 28, 1, 1, 0, 0, 'female', 1),
-('Paternity Leave', 'For male staff - 2 days (birth day and dedication day)', 2, 'days', 1, 2, 1, 1, 0, 0, 'male', 1),
-('Compassionate Leave', 'For disasters (death, fire, flood, etc.) - 2 days', 2, 'days', 1, 2, 1, 1, 0, 0, 'none', 1),
-('Serious Illness Leave', 'For serious illness - 2 days (alternative: use annual leave)', 2, 'days', 1, 2, 1, 1, 0, 0, 'none', 1),
-('Marriage Leave', 'First time marriage only - 3 days', 3, 'days', 1, 3, 1, 1, 0, 1, 'none', 1),
+('Annual Leave', 'Annual vacation leave', 14, 'days', 7, 14, 1, 1, 0, 0, 'none', 1),
+('Maternity Leave', 'For female staff during pregnancy and childbirth', 28, 'days', 14, 28, 1, 1, 0, 0, 'female', 1),
+('Paternity Leave', 'For male staff (birth day and dedication day)', 2, 'days', 1, 2, 1, 1, 0, 0, 'male', 1),
+('Compassionate Leave', 'For disasters (death, fire, flood, etc.)', 2, 'days', 1, 2, 1, 1, 0, 0, 'none', 1),
+('Serious Illness Leave', 'For serious illness (alternative: use annual leave)', 2, 'days', 1, 2, 1, 1, 0, 0, 'none', 1),
+('Marriage Leave', 'First time marriage only', 3, 'days', 1, 3, 1, 1, 0, 1, 'none', 1),
 ('Unpaid Leave', 'Unpaid leave - available to anybody at any time', 0, 'days', NULL, NULL, 0, 1, 1, 0, 'none', 1),
 ('Special Leave (Conference)', 'For conferences, seminars, and professional development', 5, 'days', 1, 5, 1, 1, 0, 0, 'none', 1),
-('Religious Leave', 'Religious observance leave - 30 days', 30, 'days', 1, 30, 1, 1, 0, 0, 'none', 1)
+('Religious Leave', 'Religious observance leave', 30, 'days', 1, 30, 1, 1, 0, 0, 'none', 1)
 ON DUPLICATE KEY UPDATE
   description       = VALUES(description),
   days_allocated    = VALUES(days_allocated),

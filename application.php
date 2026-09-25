@@ -40,6 +40,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $cover_letter = trim($_POST['cover_letter'] ?? '');
     $linkedin_url = trim($_POST['linkedin_url'] ?? '');
     $github_url = trim($_POST['github_url'] ?? '');
+
+    // Fall back to what's already on file if the applicant left these blank,
+    // then save whatever was submitted back to their profile so future
+    // applications (and the rest of the site) have the latest details.
+    $phone = trim($_POST['phone'] ?? '') ?: ($user['phone'] ?? '');
+    $address = trim($_POST['address'] ?? '') ?: ($user['address'] ?? '');
+    $bio = trim($_POST['bio'] ?? '') ?: ($user['bio'] ?? '');
+    $auth->updateProfile(
+        $user['id'],
+        $phone,
+        $bio,
+        $address,
+        $user['city'] ?? '',
+        $user['state'] ?? '',
+        $user['country'] ?? '',
+        $user['zip_code'] ?? ''
+    );
     $resume_url = null;
     $nysc_cert_url = null;
     $degree_cert_url = null;
@@ -604,7 +621,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         Phone Number
                         <span class="required">*</span>
                     </label>
-                    <input type="tel" name="phone" placeholder="Enter your phone number" required>
+                    <input type="tel" name="phone" placeholder="Enter your phone number" value="<?php echo htmlspecialchars($_POST['phone'] ?? $user['phone'] ?? ''); ?>" required>
                 </div>
 
                 <!-- Residential Address -->
@@ -613,7 +630,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         Residential Address
                         <span class="required">*</span>
                     </label>
-                    <input type="text" name="address" placeholder="Enter your residential address" required>
+                    <input type="text" name="address" placeholder="Enter your residential address" value="<?php echo htmlspecialchars($_POST['address'] ?? $user['address'] ?? ''); ?>" required>
                 </div>
 
                 <!-- Bio -->
@@ -622,7 +639,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         Bio
                         <span class="required">*</span>
                     </label>
-                    <textarea name="bio" placeholder="Tell us about yourself" required></textarea>
+                    <textarea name="bio" placeholder="Tell us about yourself" required><?php echo htmlspecialchars($_POST['bio'] ?? $user['bio'] ?? ''); ?></textarea>
                 </div>
 
                 <!-- Resume Links -->
@@ -631,7 +648,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         Resume Links
                         <span style="color: #999; font-size: 0.9em;">(Optional)</span>
                     </label>
-                    <input type="url" name="resume_link" placeholder="Enter your resume link (e.g., LinkedIn, Portfolio)">
+                    <input type="url" name="resume_link" placeholder="Enter your resume link (e.g., LinkedIn, Portfolio)" value="<?php echo htmlspecialchars($_POST['resume_link'] ?? ''); ?>">
                 </div>
 
                 <!-- LinkedIn Account -->
@@ -641,7 +658,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         LinkedIn Profile
                         <span style="color: #999; font-size: 0.9em;">(Optional)</span>
                     </label>
-                    <input type="url" name="linkedin_url" placeholder="https://linkedin.com/in/yourprofile">
+                    <input type="url" name="linkedin_url" placeholder="https://linkedin.com/in/yourprofile" value="<?php echo htmlspecialchars($_POST['linkedin_url'] ?? ''); ?>">
                 </div>
 
                 <!-- GitHub Account -->
@@ -651,7 +668,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         GitHub Profile
                         <span style="color: #999; font-size: 0.9em;">(Optional)</span>
                     </label>
-                    <input type="url" name="github_url" placeholder="https://github.com/yourprofile">
+                    <input type="url" name="github_url" placeholder="https://github.com/yourprofile" value="<?php echo htmlspecialchars($_POST['github_url'] ?? ''); ?>">
                 </div>
             </div>
 

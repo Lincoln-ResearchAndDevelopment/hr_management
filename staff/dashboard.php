@@ -749,6 +749,14 @@ if ($hour < 12) {
                     <span>My Profile</span>
                 </a>
             </li>
+            <?php if (LeaveManager::isHeadOfDepartment($staff['position'] ?? '')): ?>
+                <li>
+                    <a href="hod-dashboard.php">
+                        <i class="fas fa-user-tie"></i>
+                        <span>HOD Dashboard</span>
+                    </a>
+                </li>
+            <?php endif; ?>
             <li style="border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 15px; margin-top: 10px;">
                 <a href="handbook.php">
                     <i class="fas fa-book"></i>

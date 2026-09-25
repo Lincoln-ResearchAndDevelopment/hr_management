@@ -81,9 +81,9 @@ $gender_column_exists = $conn->query("SHOW COLUMNS FROM staff LIKE 'gender'");
 $has_gender = $gender_column_exists && $gender_column_exists->num_rows > 0;
 
 if ($has_gender) {
-    $staff_query = $conn->prepare("SELECT id, first_name, last_name, email, lincoln_email, position, gender, campus_location FROM staff WHERE id = ?");
+    $staff_query = $conn->prepare("SELECT id, first_name, last_name, email, lincoln_email, position, department, gender, campus_location FROM staff WHERE id = ?");
 } else {
-    $staff_query = $conn->prepare("SELECT id, first_name, last_name, email, lincoln_email, position, 'none' as gender, campus_location FROM staff WHERE id = ?");
+    $staff_query = $conn->prepare("SELECT id, first_name, last_name, email, lincoln_email, position, department, 'none' as gender, campus_location FROM staff WHERE id = ?");
 }
 $staff_query->bind_param("i", $staff_id);
 $staff_query->execute();
@@ -235,8 +235,83 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $result = $leaveManager->createLeaveRequest($request_data);
 
                 if ($result['success']) {
-                    $message = 'Your request has been submitted successfully and is pending approval. Please await a response from the HR before taking any action.';
+                    // Route to the requester's Head of Department first; only
+                    // fall back to going straight to HR when the department
+                    // has no HOD (or the requester is that department's only
+                    // HOD) so a request never gets stuck waiting on no one.
+                    $department_heads = $leaveManager->getDepartmentHeads($staff['department'] ?? '', $staff_id);
+
+                    if (empty($department_heads)) {
+                        $skip_reason = 'Auto-forwarded to HR: no Head of Department is configured for this department.';
+                        $skip_stmt = $conn->prepare("UPDATE leave_requests SET status = 'hod_approved', hod_remarks = ? WHERE id = ?");
+                        $skip_stmt->bind_param('si', $skip_reason, $result['request_id']);
+                        $skip_stmt->execute();
+
+                        $message = 'Your request has been submitted successfully. Your department has no Head of Department on record, so it has been forwarded directly to HR for a decision.';
+                    } else {
+                        $message = 'Your request has been submitted successfully and is pending review by your Head of Department, followed by HR\'s final decision.';
+                    }
                     $message_type = 'success';
+
+                    // Notify the relevant reviewer(s) by email. Never let a
+                    // mail failure block the staff-facing success response.
+                    try {
+                        require_once '../classes/Mailer.php';
+
+                        $leave_type_name_query = $conn->prepare("SELECT name FROM leave_types WHERE id = ?");
+                        $leave_type_name_query->bind_param('i', $leave_type_id);
+                        $leave_type_name_query->execute();
+                        $leave_type_row = $leave_type_name_query->get_result()->fetch_assoc();
+                        $leave_type_name = $leave_type_row['name'] ?? 'Leave';
+
+                        $mailer = new Mailer();
+
+                        if (empty($department_heads)) {
+                            $hr_recipients_query = $conn->query(
+                                "SELECT u.email, u.first_name, u.last_name FROM users u
+                                 JOIN user_roles ur ON ur.user_id = u.id WHERE ur.role = 'hr'"
+                            );
+                            if ($hr_recipients_query) {
+                                while ($hr_recipient = $hr_recipients_query->fetch_assoc()) {
+                                    $mailer->sendLeaveRequestNotification(
+                                        $hr_recipient['email'],
+                                        trim($hr_recipient['first_name'] . ' ' . $hr_recipient['last_name']),
+                                        trim($staff['first_name'] . ' ' . $staff['last_name']),
+                                        $staff['position'] ?? '',
+                                        $staff['department'] ?? '',
+                                        $leave_type_name,
+                                        $start_date,
+                                        $end_date,
+                                        $total_days,
+                                        $reason
+                                    );
+                                }
+                            }
+                        } else {
+                            foreach ($department_heads as $hod) {
+                                $hod_recipient = $hod['lincoln_email'] ?: $hod['email'];
+                                if (empty($hod_recipient)) {
+                                    continue;
+                                }
+                                $mailer->sendLeaveRequestNotification(
+                                    $hod_recipient,
+                                    trim($hod['first_name'] . ' ' . $hod['last_name']),
+                                    trim($staff['first_name'] . ' ' . $staff['last_name']),
+                                    $staff['position'] ?? '',
+                                    $staff['department'] ?? '',
+                                    $leave_type_name,
+                                    $start_date,
+                                    $end_date,
+                                    $total_days,
+                                    $reason,
+                                    true
+                                );
+                            }
+                        }
+                    } catch (Throwable $e) {
+                        error_log('Failed to notify reviewer about new leave request: ' . $e->getMessage());
+                    }
+
                     $_POST = [];
 
                     // Refresh leave types to get updated balances
@@ -698,6 +773,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <span>My Profile</span>
                 </a>
             </li>
+            <?php if (LeaveManager::isHeadOfDepartment($staff['position'] ?? '')): ?>
+                <li>
+                    <a href="hod-dashboard.php">
+                        <i class="fas fa-user-tie"></i>
+                        <span>HOD Dashboard</span>
+                    </a>
+                </li>
+            <?php endif; ?>
             <li style="border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 15px; margin-top: 10px;">
                 <a href="handbook.php">
                     <i class="fas fa-book"></i>
@@ -852,7 +935,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <!-- Information Box -->
                     <div class="info-box">
                         <i class="fas fa-info-circle"></i>
-                        <strong> Important:</strong> Your leave request will be forwarded to HR for approval. Please ensure you select the correct leave type and provide all necessary details.
+                        <strong> Important:</strong> Your leave request will first be reviewed by your Head of Department, then finalized by HR. Please ensure you select the correct leave type and provide all necessary details.
                     </div>
 
                     <!-- Form -->

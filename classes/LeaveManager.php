@@ -383,6 +383,111 @@ class LeaveManager
     }
 
     /**
+     * Whether a free-text staff position reads as Head of Department.
+     * Same classification HR's staff list already uses to badge HODs -
+     * there is no dedicated role/flag for it, position is the only signal.
+     */
+    public static function isHeadOfDepartment($position)
+    {
+        $p = strtolower($position ?? '');
+        return str_contains($p, 'head of department') || str_contains($p, 'hod');
+    }
+
+    /**
+     * Active staff in a department who are classified as its Head of
+     * Department, optionally excluding one staff_id (e.g. the requester,
+     * so a HOD's own leave request doesn't route to themselves).
+     */
+    public function getDepartmentHeads($department, $excludeStaffId = null)
+    {
+        if (empty($department)) {
+            return [];
+        }
+
+        $query = "SELECT id, first_name, last_name, email, lincoln_email, position
+                    FROM staff
+                    WHERE department = ? AND status = 'active'
+                        AND (LOWER(position) LIKE '%head of department%' OR LOWER(position) LIKE '%hod%')";
+        $types = 's';
+        $params = [$department];
+
+        if ($excludeStaffId !== null) {
+            $query .= " AND id != ?";
+            $types .= 'i';
+            $params[] = $excludeStaffId;
+        }
+
+        $stmt = $this->conn->prepare($query);
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        return $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
+    }
+
+    /**
+     * Leave requests from a department awaiting this HOD's first-pass
+     * decision (status 'pending'), excluding the HOD's own requests.
+     */
+    public function getDepartmentPendingLeaveRequests($department, $excludeStaffId = null)
+    {
+        $query = "SELECT lr.*, lt.name as leave_type_name,
+                    st.first_name, st.last_name, st.position, st.department
+                FROM leave_requests lr
+                JOIN leave_types lt ON lt.id = lr.leave_type_id
+                JOIN staff st ON st.id = lr.staff_id
+                WHERE lr.status = 'pending' AND st.department = ?";
+        $types = 's';
+        $params = [$department];
+
+        if ($excludeStaffId !== null) {
+            $query .= " AND lr.staff_id != ?";
+            $types .= 'i';
+            $params[] = $excludeStaffId;
+        }
+
+        $query .= " ORDER BY lr.created_at DESC";
+
+        $stmt = $this->conn->prepare($query);
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        return $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
+    }
+
+    /**
+     * Leave requests from a department this HOD has already acted on (or
+     * that HR has since finalized), most recent first - read-only history.
+     */
+    public function getDepartmentReviewedLeaveRequests($department, $excludeStaffId = null, $limit = 20)
+    {
+        $query = "SELECT lr.*, lt.name as leave_type_name,
+                    st.first_name, st.last_name, st.position, st.department
+                FROM leave_requests lr
+                JOIN leave_types lt ON lt.id = lr.leave_type_id
+                JOIN staff st ON st.id = lr.staff_id
+                WHERE lr.status IN ('hod_approved', 'hod_rejected', 'approved', 'rejected')
+                    AND st.department = ?";
+        $types = 's';
+        $params = [$department];
+
+        if ($excludeStaffId !== null) {
+            $query .= " AND lr.staff_id != ?";
+            $types .= 'i';
+            $params[] = $excludeStaffId;
+        }
+
+        $query .= " ORDER BY lr.updated_at DESC LIMIT ?";
+        $types .= 'i';
+        $params[] = $limit;
+
+        $stmt = $this->conn->prepare($query);
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        return $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
+    }
+
+    /**
      * Get all pending leave requests (for HR)
      */
     public function getAllLeaveRequests($status = null, $leave_type_id = null)

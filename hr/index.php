@@ -472,6 +472,12 @@ $upcoming_interviews = $upcoming_interviews_query->get_result()->fetch_all(MYSQL
                 </a>
             </li>
             <li>
+                <a href="pages/manage-leave-types.php">
+                    <i class="fas fa-calendar-day"></i>
+                    <span>Leave Types</span>
+                </a>
+            </li>
+            <li>
                 <a href="pages/applicants.php">
                     <i class="fas fa-users"></i>
                     <span>Applicants</span>

@@ -16,9 +16,9 @@ $contracts = [];
 
 try {
     // Try to fetch from contract history table
-    $sql = "SELECT staff_name, position, department, campus, date_issued, contract_start, contract_end 
-            FROM contract_history 
-            ORDER BY date_issued DESC 
+    $sql = "SELECT staff_name, position, department, campus, date_issued, contract_start, contract_end, contract_file
+            FROM contract_history
+            ORDER BY date_issued DESC
             LIMIT 50";
 
     $result = $conn->query($sql);

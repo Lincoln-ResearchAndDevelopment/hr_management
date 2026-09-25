@@ -423,6 +423,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         .history-table tbody tr:hover {
             background-color: #f9f9f9;
         }
+
+        .btn-icon {
+            width: 34px;
+            height: 34px;
+            padding: 0;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.85rem;
+        }
     </style>
 </head>
 
@@ -553,11 +564,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                             <th>Date Issued</th>
                             <th>Start Date</th>
                             <th>End Date</th>
+                            <th class="text-center">Download</th>
                         </tr>
                     </thead>
                     <tbody id="historyTableBody">
                         <tr>
-                            <td colspan="7" class="text-muted text-center">No contracts issued yet</td>
+                            <td colspan="8" class="text-muted text-center">No contracts issued yet</td>
                         </tr>
                     </tbody>
                 </table>
@@ -632,13 +644,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             const historyTableBody = document.getElementById('historyTableBody');
 
             if (!contracts || contracts.length === 0) {
-                historyTableBody.innerHTML = '<tr><td colspan="7" class="text-muted text-center">No contracts found</td></tr>';
+                historyTableBody.innerHTML = '<tr><td colspan="8" class="text-muted text-center">No contracts found</td></tr>';
                 return;
             }
 
             historyTableBody.innerHTML = '';
             contracts.forEach(contract => {
                 const row = document.createElement('tr');
+                const downloadCell = contract.contract_file
+                    ? `<a href="../../uploads/contracts/${encodeURIComponent(contract.contract_file)}" class="btn btn-icon btn-outline-secondary" title="Download Contract" download>
+                            <i class="fas fa-download"></i>
+                        </a>`
+                    : '<span class="text-muted">&mdash;</span>';
                 row.innerHTML = `
                     <td>${contract.staff_name}</td>
                     <td>${contract.position}</td>
@@ -647,6 +664,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <td>${new Date(contract.date_issued).toLocaleDateString()}</td>
                     <td>${new Date(contract.contract_start).toLocaleDateString()}</td>
                     <td>${new Date(contract.contract_end).toLocaleDateString()}</td>
+                    <td class="text-center">${downloadCell}</td>
                 `;
                 historyTableBody.appendChild(row);
             });

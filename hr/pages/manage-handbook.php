@@ -7,7 +7,7 @@ include '../classes/HRAuth.php';
 $hrAuth = new HRAuth($conn);
 $current_hr = $hrAuth->getCurrentHR();
 if (!$current_hr) {
-    header('Location: login.php');
+    header('Location: ../login.php');
     exit;
 }
 

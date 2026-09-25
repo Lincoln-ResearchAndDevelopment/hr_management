@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        * {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        body {
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #C82333 0%, #a01c28 100%);
+            color: #ffffff;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+        .content {
+            padding: 30px;
+            color: #333333;
+        }
+        .content p {
+            line-height: 1.6;
+            margin: 15px 0;
+        }
+        .hod-decision-badge {
+            display: inline-block;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-weight: 600;
+            background-color: {{hodDecisionColor}};
+            color: #ffffff;
+            margin: 10px 0;
+        }
+        .request-card {
+            background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+            border-left: 4px solid #C82333;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        .detail-label {
+            font-weight: 600;
+            color: #495057;
+        }
+        .detail-value {
+            color: #212529;
+            text-align: right;
+        }
+        .button {
+            display: inline-block;
+            background-color: #C82333;
+            color: #ffffff;
+            padding: 12px 30px;
+            text-decoration: none;
+            border-radius: 4px;
+            margin: 20px 0;
+            font-weight: 600;
+        }
+        .actions {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .footer {
+            background-color: #f8f9fa;
+            padding: 20px;
+            text-align: center;
+            color: #666666;
+            font-size: 12px;
+        }
+        .footer p {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🗓️ Leave Request Awaiting Your Final Decision</h1>
+        </div>
+
+        <div class="content">
+            <p>Hello {{hrName}},</p>
+
+            <p><strong>{{hodName}}</strong> (Head of Department) has reviewed the <strong>{{leaveTypeName}}</strong> request from <strong>{{staffName}}</strong> ({{position}}, {{department}}):</p>
+
+            <p style="text-align: center;">
+                <span class="hod-decision-badge">HOD {{hodDecisionLabel}}</span>
+            </p>
+
+            <div class="request-card">
+                <div class="detail-row">
+                    <span class="detail-label">📅 Start Date:</span>
+                    <span class="detail-value">{{startDate}}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">📅 End Date:</span>
+                    <span class="detail-value">{{endDate}}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">🔢 Total Days:</span>
+                    <span class="detail-value">{{totalDays}}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">💬 HOD Remarks:</span>
+                    <span class="detail-value">{{hodRemarks}}</span>
+                </div>
+            </div>
+
+            <p>This request now needs your final approval or rejection - the HOD's decision is a recommendation, not the final word.</p>
+
+            <div class="actions">
+                <a href="{{dashboardUrl}}" class="button">Review Request</a>
+            </div>
+
+            <p>Best regards,<br>
+            <strong>Lincoln HR System</strong></p>
+        </div>
+
+        <div class="footer">
+            <p>&copy; 2026 Lincoln University College. All rights reserved.</p>
+            <p>This is an automated email, please do not reply directly.</p>
+        </div>
+    </div>
+</body>
+</html>

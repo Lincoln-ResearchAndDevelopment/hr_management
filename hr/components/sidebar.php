@@ -46,6 +46,12 @@ $user_info = $user ?? null;
             </a>
         </li>
         <li>
+            <a href="manage-leave-types.php" class="<?php echo $current_page === 'manage-leave-types.php' ? 'active' : ''; ?>">
+                <i class="fas fa-calendar-day"></i>
+                <span>Leave Types</span>
+            </a>
+        </li>
+        <li>
             <a href="applicants.php" class="<?php echo $current_page === 'applicants.php' ? 'active' : ''; ?>">
                 <i class="fas fa-users"></i>
                 <span>Applicants</span>
