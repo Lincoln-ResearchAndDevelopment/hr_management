@@ -83,6 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['attendance_file'])) {
                         <i class="fas fa-check-circle"></i> 
                         <strong>Success!</strong> Processed ' . $upload_result['processed'] . ' attendance records.
                         ' . (count($upload_result['late_arrivals']) > 0 ? count($upload_result['late_arrivals']) . ' late arrivals detected and deductions applied.' : '') . '
+                        ' . (count($upload_result['absences']) > 0 ? count($upload_result['absences']) . ' absent day(s) detected (signed in but did not sign out).' : '') . '
                         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>';
                 } elseif ($upload_result['processed'] == 0) {
@@ -308,7 +309,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['attendance_file'])) {
                                     </li>
                                     <li>Date format: YYYY-MM-DD, DD-MM-YYYY, or M/D/Y</li>
                                     <li>Time format: HH:MM or HH:MM:SS, either 24-hour (e.g. 08:00, 17:30) or 12-hour with AM/PM (e.g. 8:00 AM, 5:30 PM)</li>
-                                    <li>Late arrival threshold: 09:00 AM (automatic -200 deduction per occurrence)</li>
+                                    <li>Late arrival threshold: 09:00 AM (automatic -₦<?php echo AttendanceImporter::LATE_DEDUCTION; ?> deduction per occurrence)</li>
+                                    <li>Signed in but did not sign out on a past day: marked absent (automatic -₦<?php echo AttendanceImporter::ABSENT_DEDUCTION; ?> deduction per day). Only applies when the file includes sign-out times; weekends and public holidays are never counted.</li>
                                     <li>Maximum file size: 5MB</li>
                                 </ul>
                             </div>
@@ -341,19 +343,30 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['attendance_file'])) {
                                         <h3 style="color: #28A745; margin: 0;"><?php echo $upload_result['processed']; ?></h3>
                                     </div>
                                 </div>
-                                <div class="col-md-3">
+                                <div class="col-md-2">
                                     <div class="info-box">
                                         <h6 style="margin-bottom: 10px;">Late Arrivals</h6>
                                         <h3 style="color: #ffc107; margin: 0;"><?php echo count($upload_result['late_arrivals']); ?></h3>
                                     </div>
                                 </div>
-                                <div class="col-md-3">
+                                <div class="col-md-2">
                                     <div class="info-box">
-                                        <h6 style="margin-bottom: 10px;">Total Deductions</h6>
-                                        <h3 style="color: #dc3545; margin: 0;">₦<?php echo count($upload_result['late_arrivals']) * 200; ?></h3>
+                                        <h6 style="margin-bottom: 10px;">Absent</h6>
+                                        <h3 style="color: #fd7e14; margin: 0;"><?php echo count($upload_result['absences']); ?></h3>
                                     </div>
                                 </div>
                                 <div class="col-md-3">
+                                    <div class="info-box">
+                                        <h6 style="margin-bottom: 10px;">Total Deductions</h6>
+                                        <?php
+                                        $absent_deducted = count(array_filter($upload_result['absences'], fn($a) => !empty($a['deducted'])));
+                                        $total_deducted = count($upload_result['late_arrivals']) * AttendanceImporter::LATE_DEDUCTION
+                                            + $absent_deducted * AttendanceImporter::ABSENT_DEDUCTION;
+                                        ?>
+                                        <h3 style="color: #dc3545; margin: 0;">₦<?php echo $total_deducted; ?></h3>
+                                    </div>
+                                </div>
+                                <div class="col-md-2">
                                     <div class="info-box">
                                         <h6 style="margin-bottom: 10px;">Errors</h6>
                                         <h3 style="color: #6c757d; margin: 0;"><?php echo count($upload_result['errors']); ?></h3>
@@ -380,7 +393,41 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['attendance_file'])) {
                                                         <td><?php echo htmlspecialchars($late['staff_name']); ?></td>
                                                         <td><?php echo date('M d, Y', strtotime($late['date'])); ?></td>
                                                         <td><span class="late-badge"><?php echo $late['check_in_time']; ?></span></td>
-                                                        <td><span class="deduction-badge">-₦200</span></td>
+                                                        <td><span class="deduction-badge">-₦<?php echo AttendanceImporter::LATE_DEDUCTION; ?></span></td>
+                                                    </tr>
+                                                <?php endforeach; ?>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
+
+                            <?php if (!empty($upload_result['absences'])): ?>
+                                <div class="results-table mt-4">
+                                    <h6>Absent (Signed In, Did Not Sign Out):</h6>
+                                    <div class="table-responsive">
+                                        <table class="table table-hover">
+                                            <thead>
+                                                <tr>
+                                                    <th>Staff Name</th>
+                                                    <th>Date</th>
+                                                    <th>Check-in Time</th>
+                                                    <th>Deduction</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php foreach ($upload_result['absences'] as $absent): ?>
+                                                    <tr>
+                                                        <td><?php echo htmlspecialchars($absent['staff_name']); ?></td>
+                                                        <td><?php echo date('M d, Y', strtotime($absent['date'])); ?></td>
+                                                        <td><span class="late-badge"><?php echo $absent['check_in_time']; ?></span></td>
+                                                        <td>
+                                                            <?php if (!empty($absent['deducted'])): ?>
+                                                                <span class="deduction-badge">-₦<?php echo AttendanceImporter::ABSENT_DEDUCTION; ?></span>
+                                                            <?php else: ?>
+                                                                <span class="text-muted">Already deducted</span>
+                                                            <?php endif; ?>
+                                                        </td>
                                                     </tr>
                                                 <?php endforeach; ?>
                                             </tbody>

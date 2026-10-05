@@ -7,6 +7,10 @@
 
 class AttendanceImporter
 {
+    // Flat payroll deduction per late arrival / per absent day (naira).
+    public const LATE_DEDUCTION = 1000;
+    public const ABSENT_DEDUCTION = 1000;
+
     private $conn;
 
     public function __construct($database_connection)
@@ -546,6 +550,18 @@ class AttendanceImporter
         $skipped = 0;
         $errors = [];
         $late_arrivals = [];
+        $absences = [];
+
+        // Sign-out is only judged when the file actually carries sign-out
+        // data. A file with no check-out column at all (it's optional) says
+        // nothing about who did or didn't sign out.
+        $file_tracks_checkout = false;
+        foreach ($records as $r) {
+            if (!empty(trim((string) ($r['check_out_time'] ?? '')))) {
+                $file_tracks_checkout = true;
+                break;
+            }
+        }
 
         foreach ($records as $record) {
             // Find staff by last name
@@ -595,8 +611,23 @@ class AttendanceImporter
             }
             $check_out_time = $this->normalizeTime($record['check_out_time']);
 
-            // Check if arrival is after 9:00 AM
-            if ($this->isTimeAfter($check_in_time, '09:00')) {
+            // Signed in but never signed out on a day that is already over:
+            // the day is marked absent and deducted. This replaces the late
+            // flag for that day so it is never deducted twice.
+            $is_absent = $file_tracks_checkout
+                && !$check_out_time
+                && $attendance_date < date('Y-m-d');
+
+            if ($is_absent) {
+                $status = 'absent';
+                $absences[] = [
+                    'staff_id' => $staff['id'],
+                    'staff_name' => $staff['first_name'] . ' ' . $staff['last_name'],
+                    'date' => $attendance_date,
+                    'check_in_time' => $check_in_time
+                ];
+            } elseif ($this->isTimeAfter($check_in_time, '09:00')) {
+                // Check if arrival is after 9:00 AM
                 $status = 'late';
                 $is_late = true;
                 $late_arrivals[] = [
@@ -619,9 +650,20 @@ class AttendanceImporter
             if ($result['success']) {
                 $processed++;
 
-                // If late arrival, add payroll deduction
-                if ($is_late) {
+                // If late arrival, add payroll deduction - once per day, so
+                // re-importing the same file doesn't deduct it again.
+                if ($is_late && !in_array($result['previous_status'] ?? null, ['late', 'absent'], true)) {
                     $this->addLateArrivalDeduction($staff['id'], $attendance_date, $staff['campus_location'] ?? null);
+                }
+
+                // Absent: deduct once per day. Skip when the day was already
+                // absent (re-import) or already deducted as late.
+                if ($is_absent) {
+                    $deduct = !in_array($result['previous_status'] ?? null, ['absent', 'late'], true);
+                    if ($deduct) {
+                        $this->addAttendanceDeduction($staff['id'], $attendance_date, $staff['campus_location'] ?? null, self::ABSENT_DEDUCTION);
+                    }
+                    $absences[count($absences) - 1]['deducted'] = $deduct;
                 }
             } else {
                 $errors[] = "Row {$record['row_number']}: " . $result['message'];
@@ -634,7 +676,8 @@ class AttendanceImporter
             'processed' => $processed,
             'skipped' => $skipped,
             'errors' => $errors,
-            'late_arrivals' => $late_arrivals
+            'late_arrivals' => $late_arrivals,
+            'absences' => $absences
         ];
     }
 
@@ -748,11 +791,12 @@ class AttendanceImporter
     {
         // Check if record exists
         $check_record = $this->conn->prepare(
-            "SELECT id FROM attendance_records WHERE staff_id = ? AND attendance_date = ?"
+            "SELECT id, status FROM attendance_records WHERE staff_id = ? AND attendance_date = ?"
         );
         $check_record->bind_param("is", $staff_id, $attendance_date);
         $check_record->execute();
         $exists = $check_record->get_result()->fetch_assoc();
+        $previous_status = $exists['status'] ?? null;
 
         if ($exists) {
             // Update existing record
@@ -764,7 +808,7 @@ class AttendanceImporter
             $update->bind_param("sssis", $check_in_time, $check_out_time, $status, $staff_id, $attendance_date);
 
             if ($update->execute()) {
-                return ['success' => true, 'message' => 'Attendance updated'];
+                return ['success' => true, 'message' => 'Attendance updated', 'previous_status' => $previous_status];
             } else {
                 return ['success' => false, 'message' => 'Failed to update attendance: ' . $update->error];
             }
@@ -777,7 +821,7 @@ class AttendanceImporter
             $insert->bind_param("issss", $staff_id, $attendance_date, $check_in_time, $check_out_time, $status);
 
             if ($insert->execute()) {
-                return ['success' => true, 'message' => 'Attendance recorded'];
+                return ['success' => true, 'message' => 'Attendance recorded', 'previous_status' => null];
             } else {
                 return ['success' => false, 'message' => 'Failed to record attendance: ' . $insert->error];
             }
@@ -788,6 +832,15 @@ class AttendanceImporter
      * Add late arrival deduction to payroll
      */
     private function addLateArrivalDeduction($staff_id, $attendance_date, $campus_location = null)
+    {
+        return $this->addAttendanceDeduction($staff_id, $attendance_date, $campus_location, self::LATE_DEDUCTION);
+    }
+
+    /**
+     * Add a flat attendance deduction (late or absent) to the staff
+     * member's payroll for the month of the given date.
+     */
+    private function addAttendanceDeduction($staff_id, $attendance_date, $campus_location, $amount)
     {
         // Extract month-year from attendance date
         $month_year = date('Y-m', strtotime($attendance_date));
@@ -823,10 +876,10 @@ class AttendanceImporter
         // Add/Update late arrival deduction
         $update_deduction = $this->conn->prepare(
             "UPDATE payroll 
-             SET attendance_deduction = attendance_deduction + 1000
+             SET attendance_deduction = attendance_deduction + ?
              WHERE staff_id = ? AND month_year = ?"
         );
-        $update_deduction->bind_param("is", $staff_id, $month_year);
+        $update_deduction->bind_param("dis", $amount, $staff_id, $month_year);
         return $update_deduction->execute();
     }
 
