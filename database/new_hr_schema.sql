@@ -42,6 +42,9 @@
 --      request first; HR gives the final approve/reject decision after.
 --      Against an existing database, run
 --      database/migration_hod_leave_approval.sql instead of this file.
+--  10. staff.attendance_id added - attendance uploads are matched to staff by
+--      this ID number (the biometric Enroll ID) instead of by name. Against an
+--      existing database, run database/migration_staff_attendance_id.sql.
 --
 -- This file contains structure and safe seed data only. No staff records,
 -- contract history, or session tokens from the source database.
@@ -769,6 +772,7 @@ CREATE TABLE `staff` (
   `last_name` varchar(100) NOT NULL,
   `email` varchar(100) NOT NULL,
   `lincoln_email` varchar(255) DEFAULT NULL,
+  `attendance_id` varchar(20) DEFAULT NULL,
   `password` varchar(255) DEFAULT NULL,
   `position` varchar(100) NOT NULL,
   `department` varchar(100) DEFAULT NULL,
@@ -786,6 +790,7 @@ CREATE TABLE `staff` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `email` (`email`),
   UNIQUE KEY `lincoln_email` (`lincoln_email`),
+  UNIQUE KEY `uniq_staff_attendance_id` (`attendance_id`),
   KEY `idx_staff_user_id` (`user_id`),
   CONSTRAINT `staff_ibfk_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

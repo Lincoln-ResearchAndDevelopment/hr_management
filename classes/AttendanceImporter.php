@@ -11,6 +11,9 @@ class AttendanceImporter
     public const LATE_DEDUCTION = 1000;
     public const ABSENT_DEDUCTION = 1000;
 
+    // Header names accepted for the staff ID column in CSV / Excel tables.
+    private const ID_COLUMN_ALIASES = ['staff_id', 'enroll_id', 'attendance_id'];
+
     private $conn;
 
     public function __construct($database_connection)
@@ -35,27 +38,40 @@ class AttendanceImporter
             // Read header row
             $header = fgetcsv($handle);
 
-            // Expected columns: last_name, first_name, date, check_in_time, status (optional)
-            $last_name_col = array_search('last_name', array_map('strtolower', $header));
-            $first_name_col = array_search('first_name', array_map('strtolower', $header));
-            $date_col = array_search('date', array_map('strtolower', $header));
-            $check_in_col = array_search('check_in_time', array_map('strtolower', $header));
+            // Expected columns: staff_id (the staff ID number, e.g. 000000190),
+            // date, check_in_time; optional first_name, last_name, check_out_time.
+            // Staff are matched by ID only - names can be shared by two people.
+            $header_lower = array_map(fn($h) => strtolower(trim($h)), $header);
+            $id_col = false;
+            foreach (self::ID_COLUMN_ALIASES as $alias) {
+                $found = array_search($alias, $header_lower, true);
+                if ($found !== false) {
+                    $id_col = $found;
+                    break;
+                }
+            }
+            $last_name_col = array_search('last_name', $header_lower);
+            $first_name_col = array_search('first_name', $header_lower);
+            $date_col = array_search('date', $header_lower);
+            $check_in_col = array_search('check_in_time', $header_lower);
             $check_out_col = array_search('check_out_time', array_map('strtolower', $header)) !== false
                 ? array_search('check_out_time', array_map('strtolower', $header))
                 : null;
 
-            if ($last_name_col === false || $date_col === false || $check_in_col === false) {
-                return ['success' => false, 'message' => 'CSV must contain: last_name, date, check_in_time columns'];
+            if ($id_col === false || $date_col === false || $check_in_col === false) {
+                fclose($handle);
+                return ['success' => false, 'message' => 'CSV must contain: staff_id, date, check_in_time columns (staff are matched by their ID number, not by name)'];
             }
 
             while (($row = fgetcsv($handle)) !== FALSE) {
                 $row_number++;
 
                 // Skip empty rows
-                if (empty($row[0])) continue;
+                if (!isset($row[$id_col]) || trim($row[$id_col]) === '') continue;
 
-                $last_name = trim($row[$last_name_col]);
-                $first_name = isset($row[$first_name_col]) ? trim($row[$first_name_col]) : '';
+                $staff_number = trim($row[$id_col]);
+                $last_name = ($last_name_col !== false && isset($row[$last_name_col])) ? trim($row[$last_name_col]) : '';
+                $first_name = ($first_name_col !== false && isset($row[$first_name_col])) ? trim($row[$first_name_col]) : '';
                 $date = trim($row[$date_col]);
                 $check_in = trim($row[$check_in_col]);
                 $check_out = ($check_out_col !== null && isset($row[$check_out_col])) ? trim($row[$check_out_col]) : null;
@@ -73,6 +89,7 @@ class AttendanceImporter
                 }
 
                 $records[] = [
+                    'staff_number' => $staff_number,
                     'last_name' => $last_name,
                     'first_name' => $first_name,
                     'date' => $date,
@@ -130,7 +147,7 @@ class AttendanceImporter
             return $this->parseBiometricXlsxRows($rows);
         }
 
-        return ['success' => false, 'message' => 'Could not recognize this file\'s layout. Expected either a last_name/date/check_in_time table, or the Enroll ID attendance log format.'];
+        return ['success' => false, 'message' => 'Could not recognize this file\'s layout. Expected either a staff_id/date/check_in_time table, or the Enroll ID attendance log format.'];
     }
 
     /**
@@ -239,7 +256,7 @@ class AttendanceImporter
     {
         foreach ($rows as $rowData) {
             $values = array_map('strtolower', array_map('trim', array_values($rowData)));
-            if (in_array('last_name', $values, true) && in_array('date', $values, true) && in_array('check_in_time', $values, true)) {
+            if (array_intersect(self::ID_COLUMN_ALIASES, $values) && in_array('date', $values, true) && in_array('check_in_time', $values, true)) {
                 return true;
             }
             break; // only check the very first non-empty row
@@ -280,19 +297,27 @@ class AttendanceImporter
                 foreach ($rowData as $col => $value) {
                     $col_map[strtolower(trim($value))] = $col;
                 }
-                if (!isset($col_map['last_name'], $col_map['date'], $col_map['check_in_time'])) {
-                    return ['success' => false, 'message' => 'Excel file must contain: last_name, date, check_in_time columns'];
+                $id_key = null;
+                foreach (self::ID_COLUMN_ALIASES as $alias) {
+                    if (isset($col_map[$alias])) {
+                        $id_key = $alias;
+                        break;
+                    }
+                }
+                if ($id_key === null || !isset($col_map['date'], $col_map['check_in_time'])) {
+                    return ['success' => false, 'message' => 'Excel file must contain: staff_id, date, check_in_time columns (staff are matched by their ID number, not by name)'];
                 }
                 $header = true;
                 continue;
             }
 
             $row_number++;
-            $last_name = trim($rowData[$col_map['last_name']] ?? '');
-            if ($last_name === '') {
+            $staff_number = trim($rowData[$col_map[$id_key]] ?? '');
+            if ($staff_number === '') {
                 continue;
             }
-            $first_name = trim($rowData[$col_map['first_name'] ?? ''] ?? '');
+            $last_name = isset($col_map['last_name']) ? trim($rowData[$col_map['last_name']] ?? '') : '';
+            $first_name = isset($col_map['first_name']) ? trim($rowData[$col_map['first_name']] ?? '') : '';
             $date = trim($rowData[$col_map['date']] ?? '');
             $check_in = trim($rowData[$col_map['check_in_time']] ?? '');
             $check_out = isset($col_map['check_out_time']) ? trim($rowData[$col_map['check_out_time']] ?? '') : null;
@@ -307,6 +332,7 @@ class AttendanceImporter
             }
 
             $records[] = [
+                'staff_number' => $staff_number,
                 'last_name' => $last_name,
                 'first_name' => $first_name,
                 'date' => $date,
@@ -385,11 +411,14 @@ class AttendanceImporter
                 continue;
             }
 
+            // The Enroll ID is the staff ID number; the name in the export is
+            // only used for display in error messages, never for matching.
+            $staff_number = trim($m[1]);
             $name_parts = preg_split('/\s+/', trim($m[2]), 2);
             $last_name = $name_parts[0] ?? '';
             $first_name = $name_parts[1] ?? '';
 
-            if ($last_name === '') {
+            if ($staff_number === '') {
                 continue;
             }
 
@@ -424,6 +453,7 @@ class AttendanceImporter
                 }
 
                 $records[] = [
+                    'staff_number' => $staff_number,
                     'last_name' => $last_name,
                     'first_name' => $first_name,
                     'date' => $date,
@@ -564,11 +594,14 @@ class AttendanceImporter
         }
 
         foreach ($records as $record) {
-            // Find staff by last name
-            $staff = $this->findStaffByLastName($record['last_name']);
+            // Find staff by ID number (never by name - two people can share one)
+            $staff = $this->findStaffByStaffNumber($record['staff_number'] ?? '');
 
             if (!$staff) {
-                $errors[] = "Row {$record['row_number']}: Staff with last name '{$record['last_name']}' not found";
+                $who = trim(($record['first_name'] ?? '') . ' ' . ($record['last_name'] ?? ''));
+                $errors[] = "Row {$record['row_number']}: No staff member has ID '{$record['staff_number']}'"
+                    . ($who !== '' ? " (file says: {$who})" : '')
+                    . ' - set this ID on their staff record';
                 $skipped++;
                 continue;
             }
@@ -682,18 +715,26 @@ class AttendanceImporter
     }
 
     /**
-     * Find staff by last name (returns first match)
+     * Find a staff member by their staff ID number (staff.attendance_id,
+     * e.g. 000000190). Leading zeros are ignored on both sides so "190" and
+     * "000000190" match, but the ID itself is the only thing compared.
+     * Staff IDs are unique, so this can never pick the wrong person.
      */
-    private function findStaffByLastName($last_name)
+    private function findStaffByStaffNumber($staff_number)
     {
-        $find_staff = $this->conn->prepare(
-            "SELECT id, first_name, last_name, email, campus_location FROM staff WHERE LOWER(last_name) = LOWER(?)"
-        );
-        $find_staff->bind_param("s", $last_name);
-        $find_staff->execute();
-        $result = $find_staff->get_result();
+        $normalized = ltrim(trim((string) $staff_number), '0');
+        if ($normalized === '') {
+            return null;
+        }
 
-        return $result->fetch_assoc();
+        $find_staff = $this->conn->prepare(
+            "SELECT id, first_name, last_name, email, campus_location FROM staff
+             WHERE attendance_id IS NOT NULL AND TRIM(LEADING '0' FROM attendance_id) = ? LIMIT 1"
+        );
+        $find_staff->bind_param("s", $normalized);
+        $find_staff->execute();
+
+        return $find_staff->get_result()->fetch_assoc();
     }
 
     /**

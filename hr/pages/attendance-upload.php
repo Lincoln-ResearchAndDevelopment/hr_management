@@ -303,10 +303,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['attendance_file'])) {
                                 <ul style="margin-bottom: 0; padding-left: 20px;">
                                     <li>Two formats accepted, CSV or real Excel (.csv, .xlsx, .xls):
                                         <ul style="margin: 6px 0;">
-                                            <li><strong>Simple table:</strong> columns for last_name, date, check_in_time (required), plus first_name, check_out_time (optional)</li>
+                                            <li><strong>Simple table:</strong> columns for staff_id, date, check_in_time (required), plus check_out_time, first_name, last_name (optional)</li>
                                             <li><strong>Biometric clock export</strong> ("Attendance Log" / Enroll ID format) - uploaded exactly as exported from the fingerprint device, no conversion needed</li>
                                         </ul>
                                     </li>
+                                    <li><strong>Staff are matched by their Staff ID number</strong> (e.g. 000000190 - the Enroll ID on the clock export), never by name. Set each person's ID on the Staff Management page first; rows whose ID isn't found are skipped and listed below.</li>
                                     <li>Date format: YYYY-MM-DD, DD-MM-YYYY, or M/D/Y</li>
                                     <li>Time format: HH:MM or HH:MM:SS, either 24-hour (e.g. 08:00, 17:30) or 12-hour with AM/PM (e.g. 8:00 AM, 5:30 PM)</li>
                                     <li>Late arrival threshold: 09:00 AM (automatic -₦<?php echo AttendanceImporter::LATE_DEDUCTION; ?> deduction per occurrence)</li>

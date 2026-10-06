@@ -41,6 +41,34 @@ if (!in_array($filter_campus, $campus_locations, true)) {
     $filter_campus = '';
 }
 
+/**
+ * Validates a staff ID number (e.g. 000000190) for attendance matching.
+ * Returns null if valid, otherwise an error message. Leading zeros don't make
+ * an ID different ("190" and "000000190" are the same person), so uniqueness
+ * is checked on the zero-stripped value.
+ */
+function validateAttendanceId($conn, $attendance_id, $except_staff_id = 0)
+{
+    if (!preg_match('/^[A-Za-z0-9]{1,20}$/', $attendance_id)) {
+        return 'Staff ID must be 1-20 letters/numbers with no spaces (e.g. 000000190).';
+    }
+    $normalized = ltrim($attendance_id, '0');
+    if ($normalized === '') {
+        return 'Staff ID cannot be all zeros.';
+    }
+    $stmt = $conn->prepare(
+        "SELECT first_name, last_name FROM staff
+         WHERE attendance_id IS NOT NULL AND TRIM(LEADING '0' FROM attendance_id) = ? AND id <> ? LIMIT 1"
+    );
+    $stmt->bind_param("si", $normalized, $except_staff_id);
+    $stmt->execute();
+    $owner = $stmt->get_result()->fetch_assoc();
+    if ($owner) {
+        return 'Staff ID ' . $attendance_id . ' already belongs to ' . $owner['first_name'] . ' ' . $owner['last_name'] . '.';
+    }
+    return null;
+}
+
 // Handle staff actions
 $status_message = '';
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
@@ -53,6 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $last_name = trim($_POST['last_name'] ?? '');
             $email = trim($_POST['email'] ?? '');
             $lincoln_email = trim($_POST['lincoln_email'] ?? '');
+            $attendance_id = trim($_POST['attendance_id'] ?? '');
             $position = trim($_POST['position'] ?? '');
             $department = trim($_POST['department'] ?? '');
             $campus_location = trim($_POST['campus_location'] ?? '');
@@ -65,7 +94,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $campus_location = '';
             }
 
-            if (!empty($first_name) && !empty($last_name) && !empty($email) && !empty($position)) {
+            $attendance_id_error = $attendance_id !== '' ? validateAttendanceId($conn, $attendance_id) : null;
+
+            if ($attendance_id_error !== null) {
+                $status_message = '<div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <i class="fas fa-exclamation-circle"></i> ' . htmlspecialchars($attendance_id_error) . '
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>';
+            } elseif (!empty($first_name) && !empty($last_name) && !empty($email) && !empty($position)) {
+                $attendance_id = $attendance_id !== '' ? $attendance_id : null;
                 // Check if user already exists with this email
                 $check_user = $conn->prepare("SELECT id FROM users WHERE email = ?");
                 $check_user->bind_param("s", $email);
@@ -107,10 +144,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
                 // Now insert the staff record
                 $insert_staff = $conn->prepare(
-                    "INSERT INTO staff (first_name, last_name, email, password, position, department, campus_location, hire_date, contract_start_date, contract_end_date, salary, lincoln_email, user_id, created_by)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                    "INSERT INTO staff (first_name, last_name, email, password, position, department, campus_location, hire_date, contract_start_date, contract_end_date, salary, lincoln_email, attendance_id, user_id, created_by)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 );
-                $insert_staff->bind_param("ssssssssssdsii", $first_name, $last_name, $email, $hashed_password, $position, $department, $campus_location, $hire_date, $contract_start_date, $contract_end_date, $salary, $lincoln_email, $user_id, $user['id']);
+                $insert_staff->bind_param("ssssssssssdssii", $first_name, $last_name, $email, $hashed_password, $position, $department, $campus_location, $hire_date, $contract_start_date, $contract_end_date, $salary, $lincoln_email, $attendance_id, $user_id, $user['id']);
 
                 if ($insert_staff->execute()) {
                     // Send credentials email to original signup email
@@ -140,6 +177,32 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     </div>';
                 }
                 end_add_staff:
+            }
+        } elseif ($action == 'set_attendance_id' && $staff_id > 0) {
+            $attendance_id = trim($_POST['attendance_id'] ?? '');
+            $error = $attendance_id !== '' ? validateAttendanceId($conn, $attendance_id, $staff_id) : null;
+
+            if ($error !== null) {
+                $status_message = '<div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <i class="fas fa-exclamation-circle"></i> ' . htmlspecialchars($error) . '
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>';
+            } else {
+                // An empty box clears the ID.
+                $new_id = $attendance_id !== '' ? $attendance_id : null;
+                $set_id = $conn->prepare("UPDATE staff SET attendance_id = ? WHERE id = ? AND created_by = ?");
+                $set_id->bind_param("sii", $new_id, $staff_id, $user['id']);
+                if ($set_id->execute()) {
+                    $status_message = '<div class="alert alert-success alert-dismissible fade show" role="alert">
+                        <i class="fas fa-check-circle"></i> Staff ID saved.
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>';
+                } else {
+                    $status_message = '<div class="alert alert-danger alert-dismissible fade show" role="alert">
+                        <i class="fas fa-exclamation-circle"></i> Could not save the Staff ID.
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>';
+                }
             }
         } elseif ($action == 'delete_staff' && $staff_id > 0) {
             $delete_staff = $conn->prepare("DELETE FROM staff WHERE id = ? AND created_by = ?");
@@ -696,6 +759,15 @@ function getRoleTier($position)
                             <?php if (!empty($staff['campus_location'])): ?>
                                 <p><i class="fas fa-location-dot"></i> <?php echo htmlspecialchars($staff['campus_location']); ?></p>
                             <?php endif; ?>
+                            <form method="POST" style="display: flex; align-items: center; gap: 6px; margin: 0 0 6px;">
+                                <i class="fas fa-fingerprint" title="Staff ID (used to match attendance)"></i>
+                                <input type="hidden" name="action" value="set_attendance_id">
+                                <input type="hidden" name="staff_id" value="<?php echo $staff['id']; ?>">
+                                <input type="text" name="attendance_id" value="<?php echo htmlspecialchars($staff['attendance_id'] ?? ''); ?>"
+                                    placeholder="Staff ID e.g. 000000190" maxlength="20" pattern="[A-Za-z0-9]{1,20}"
+                                    style="flex: 1; min-width: 0; padding: 3px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;">
+                                <button type="submit" class="btn-action" style="padding: 3px 10px;">Save</button>
+                            </form>
                             <p><i class="fas fa-envelope"></i> <?php echo htmlspecialchars($staff['email']); ?></p>
                             <?php if (!empty($staff['lincoln_email'])): ?>
                                 <p><i class="fas fa-envelope-circle-check"></i> <?php echo htmlspecialchars($staff['lincoln_email']); ?></p>
@@ -781,6 +853,14 @@ function getRoleTier($position)
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Lincoln Email</label>
                                 <input type="email" class="form-control" name="lincoln_email" placeholder="e.g., umar@lincoln.edu.ng" required>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Staff ID Number</label>
+                                <input type="text" class="form-control" name="attendance_id" placeholder="e.g., 000000190" maxlength="20" pattern="[A-Za-z0-9]{1,20}">
+                                <small class="text-muted">Used to match attendance uploads (the Enroll ID on the clock). Each ID belongs to one person.</small>
                             </div>
                         </div>
 
