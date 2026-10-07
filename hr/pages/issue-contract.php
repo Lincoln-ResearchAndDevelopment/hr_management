@@ -31,78 +31,6 @@ $templates = [
     'abuja' => 'Abuja_Template.docx'
 ];
 
-function xmlEscapeText($value)
-{
-    return htmlspecialchars($value, ENT_QUOTES | ENT_XML1, 'UTF-8');
-}
-
-function replaceTextInWordParagraphs($xml, $replacements)
-{
-    return preg_replace_callback('/<w:p\\b[^>]*>.*?<\\/w:p>/s', function ($paragraphMatch) use ($replacements) {
-        $paragraphXml = $paragraphMatch[0];
-
-        preg_match_all('/<w:t\\b[^>]*>(.*?)<\\/w:t>/s', $paragraphXml, $textMatches);
-        if (empty($textMatches[1])) {
-            return $paragraphXml;
-        }
-
-        $plainText = '';
-        foreach ($textMatches[1] as $piece) {
-            $plainText .= html_entity_decode($piece, ENT_QUOTES | ENT_XML1, 'UTF-8');
-        }
-
-        $updatedText = str_ireplace(array_keys($replacements), array_values($replacements), $plainText);
-        if ($updatedText === $plainText) {
-            return $paragraphXml;
-        }
-
-        preg_match('/^<w:p\\b[^>]*>/', $paragraphXml, $openTagMatch);
-        $openTag = $openTagMatch[0] ?? '<w:p>';
-
-        preg_match('/<w:pPr\\b.*?<\\/w:pPr>/s', $paragraphXml, $pPrMatch);
-        $pPr = $pPrMatch[0] ?? '';
-
-        return $openTag . $pPr . '<w:r><w:t xml:space="preserve">' . xmlEscapeText($updatedText) . '</w:t></w:r></w:p>';
-    }, $xml);
-}
-
-function replaceTextInGeneratedDocx($docxPath, $replacements)
-{
-    if (!class_exists('ZipArchive')) {
-        return;
-    }
-
-    $zip = new ZipArchive();
-    if ($zip->open($docxPath) !== true) {
-        return;
-    }
-
-    $xmlFiles = [
-        'word/document.xml',
-        'word/header1.xml',
-        'word/header2.xml',
-        'word/header3.xml',
-        'word/footer1.xml',
-        'word/footer2.xml',
-        'word/footer3.xml'
-    ];
-
-    foreach ($xmlFiles as $xmlFile) {
-        $xml = $zip->getFromName($xmlFile);
-        if ($xml === false) {
-            continue;
-        }
-
-        $updatedXml = replaceTextInWordParagraphs($xml, $replacements);
-        $updatedXml = str_ireplace(array_keys($replacements), array_values($replacements), $updatedXml);
-        if ($updatedXml !== $xml) {
-            $zip->addFromString($xmlFile, $updatedXml);
-        }
-    }
-
-    $zip->close();
-}
-
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $template_type = trim($_POST['template_type'] ?? '');
     $staff_name = trim($_POST['staff_name'] ?? '');
@@ -110,84 +38,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $date_issued = trim($_POST['date_issued'] ?? '');
     $contract_start = trim($_POST['contract_start'] ?? '');
     $contract_end = trim($_POST['contract_end'] ?? '');
-    function dateToWords($dateStr)
-    {
-        $months = [
-            1 => 'January',
-            2 => 'February',
-            3 => 'March',
-            4 => 'April',
-            5 => 'May',
-            6 => 'June',
-            7 => 'July',
-            8 => 'August',
-            9 => 'September',
-            10 => 'October',
-            11 => 'November',
-            12 => 'December'
-        ];
-        $dt = strtotime($dateStr);
-        if (!$dt) return $dateStr;
-        $day = (int)date('j', $dt);
-        $month = (int)date('n', $dt);
-        $year = (int)date('Y', $dt);
-        $dayWords = [
-            1 => 'First',
-            2 => 'Second',
-            3 => 'Third',
-            4 => 'Fourth',
-            5 => 'Fifth',
-            6 => 'Sixth',
-            7 => 'Seventh',
-            8 => 'Eighth',
-            9 => 'Ninth',
-            10 => 'Tenth',
-            11 => 'Eleventh',
-            12 => 'Twelfth',
-            13 => 'Thirteenth',
-            14 => 'Fourteenth',
-            15 => 'Fifteenth',
-            16 => 'Sixteenth',
-            17 => 'Seventeenth',
-            18 => 'Eighteenth',
-            19 => 'Nineteenth',
-            20 => 'Twentieth',
-            21 => 'Twenty-First',
-            22 => 'Twenty-Second',
-            23 => 'Twenty-Third',
-            24 => 'Twenty-Fourth',
-            25 => 'Twenty-Fifth',
-            26 => 'Twenty-Sixth',
-            27 => 'Twenty-Seventh',
-            28 => 'Twenty-Eighth',
-            29 => 'Twenty-Ninth',
-            30 => 'Thirtieth',
-            31 => 'Thirty-First'
-        ];
-        $yearWords = [
-            2020 => 'Two Thousand Twenty',
-            2021 => 'Two Thousand Twenty-One',
-            2022 => 'Two Thousand Twenty-Two',
-            2023 => 'Two Thousand Twenty-Three',
-            2024 => 'Two Thousand Twenty-Four',
-            2025 => 'Two Thousand Twenty-Five',
-            2026 => 'Two Thousand Twenty-Six',
-            2027 => 'Two Thousand Twenty-Seven',
-            2028 => 'Two Thousand Twenty-Eight',
-            2029 => 'Two Thousand Twenty-Nine',
-            2030 => 'Two Thousand Thirty'
-        ];
-        $dayWord = $dayWords[$day] ?? $day;
-        $monthWord = $months[$month] ?? $month;
-        $yearWord = $yearWords[$year] ?? $year;
-        return "$dayWord $monthWord, $yearWord";
-    }
     $staff_email = trim($_POST['staff_email'] ?? '');
     $department = trim($_POST['department'] ?? '');
     $campus = trim($_POST['campus'] ?? '');
     $salary = trim($_POST['salary'] ?? '');
     $position = trim($_POST['position'] ?? '');
-    $salary_display = preg_match('/^(₦|N)/iu', $salary) ? $salary : '₦' . $salary;
+    if (preg_match('/^[\d,]+(\.\d+)?$/', $salary)) {
+        // A plain amount: show it as a money figure per month, e.g. "₦150,000 monthly"
+        $salary_display = '₦' . number_format((float) str_replace(',', '', $salary)) . ' monthly';
+    } else {
+        $salary_display = preg_match('/^(₦|N)/iu', $salary) ? $salary : '₦' . $salary;
+    }
 
     if ($template_type && $staff_name && $address && $date_issued && $contract_start && $contract_end && $staff_email && $department && $campus && $salary && $position) {
         try {
@@ -206,73 +67,38 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 throw new Exception('Template file not found');
             }
 
-            // Use TemplateProcessor to replace placeholders
+            // Fill the ${placeholders} in the template (see contract-templates/README.md)
             $templateProcessor = new TemplateProcessor($template_path);
 
-            // Replace common placeholders (adjust based on actual template)
-            $templateProcessor->setValue('name', $staff_name);
-            $templateProcessor->setValue('Name', $staff_name);
-            $templateProcessor->setValue('NAME', strtoupper($staff_name));
-            $templateProcessor->setValue('staff_name', $staff_name);
-            $templateProcessor->setValue('StaffName', $staff_name);
+            $contract_months = (int) ((new DateTime($contract_start))->diff(new DateTime($contract_end))->format('%y') * 12
+                + (new DateTime($contract_start))->diff(new DateTime($contract_end))->format('%m'));
+            if ($contract_months >= 12) {
+                $years = (int) round($contract_months / 12);
+                $year_words = [1 => 'One', 2 => 'Two', 3 => 'Three', 4 => 'Four', 5 => 'Five', 6 => 'Six', 7 => 'Seven', 8 => 'Eight', 9 => 'Nine', 10 => 'Ten'];
+                $duration = ($year_words[$years] ?? $years) . " ($years) Year(s)";
+            } else {
+                $duration = "$contract_months Month(s)";
+            }
 
-            $templateProcessor->setValue('date', $date_issued);
-            $templateProcessor->setValue('Date', $date_issued);
-            $templateProcessor->setValue('date_issued', $date_issued);
-            $templateProcessor->setValue('DateIssued', $date_issued);
-
-            $start_date_words = dateToWords($contract_start);
-            $end_date_words = dateToWords($contract_end);
-            $templateProcessor->setValue('start_date', $start_date_words);
-            $templateProcessor->setValue('StartDate', $start_date_words);
-            $templateProcessor->setValue('contract_start', $start_date_words);
-            $templateProcessor->setValue('ContractStart', $start_date_words);
-
-            $templateProcessor->setValue('end_date', $end_date_words);
-            $templateProcessor->setValue('EndDate', $end_date_words);
-            $templateProcessor->setValue('contract_end', $end_date_words);
-            $templateProcessor->setValue('ContractEnd', $end_date_words);
-
-            $templateProcessor->setValue('department', $department);
-            $templateProcessor->setValue('Department', $department);
-            $templateProcessor->setValue('DEPARTMENT', strtoupper($department));
-
-            $templateProcessor->setValue('salary', $salary_display);
-            $templateProcessor->setValue('Salary', $salary_display);
-            $templateProcessor->setValue('SALARY', $salary_display);
-
-            $templateProcessor->setValue('address', $address);
-            $templateProcessor->setValue('Address', $address);
-            $templateProcessor->setValue('ADDRESS', strtoupper($address));
-
-            $templateProcessor->setValue('position', $position);
-            $templateProcessor->setValue('Position', $position);
-            $templateProcessor->setValue('POSITION', strtoupper($position));
-
-            $templateProcessor->setValue('email', $staff_email);
-            $templateProcessor->setValue('Email', $staff_email);
+            $templateProcessor->setValues([
+                'name'       => $staff_name,
+                'name_caps'  => strtoupper($staff_name),
+                'address'    => $address,
+                'date'       => date('l, F j, Y', strtotime($date_issued)),
+                'position'   => $position,
+                'department' => $department,
+                'start_date' => date('jS F, Y', strtotime($contract_start)),
+                'end_date'   => date('jS F, Y', strtotime($contract_end)),
+                'duration'   => $duration,
+                'salary'     => $salary_display,
+                'email'      => $staff_email,
+            ]);
 
             // Save the generated contract
             $output_filename = preg_replace('/[^a-zA-Z0-9]/', '_', $staff_name) . '_contract_' . date('YmdHis') . '.docx';
             $output_path = '../../uploads/contracts/' . $output_filename;
 
             $templateProcessor->saveAs($output_path);
-
-            $legacyReplacements = [
-                'Mr. Ukatu olisa' => 'Mr. ' . $staff_name,
-                'Dear Mr. Yakubu,' => 'Dear Mr. ' . $staff_name . ',',
-                'Yakubu' => $staff_name,
-                'Ukatu olisa' => $staff_name,
-                'Zandam, Gwaram Local Government, Jigawa State, Nigeria.' => $address,
-                'Department of Computer Science' => 'Department of ' . $department,
-                'Tutor (Part-Time)' => $position,
-                'N100,000 basic and N20,000 allowance (One Hundred and Twenty Thousand Naira) monthly.' => $salary_display,
-                'Monday, February 17, 2025' => dateToWords($date_issued),
-                '23-02-2025 to 22-02-2027' => dateToWords($contract_start) . ' to ' . dateToWords($contract_end),
-                'commencing from 23-02-2025 to 22-02-2027' => 'commencing from ' . dateToWords($contract_start) . ' to ' . dateToWords($contract_end)
-            ];
-
-            replaceTextInGeneratedDocx($output_path, $legacyReplacements);
 
             // Save contract history to database
             $user_id = $user['id'] ?? null;
@@ -527,6 +353,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             <div class="mb-3">
                 <label for="contract_end" class="form-label">Contract End Date <span class="text-danger">*</span></label>
                 <input type="date" class="form-control" id="contract_end" name="contract_end" required>
+                <small class="text-muted">Filled in automatically as 2 years after the start date. You can still change it.</small>
             </div>
 
             <div class="d-grid">
@@ -578,7 +405,26 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     </div>
 
     <script>
+        // Contract end date = same day, 2 years after the start date (6 Oct 2026 -> 6 Oct 2028).
+        function twoYearsAfter(iso) {
+            const [y, m, d] = iso.split('-').map(Number);
+            const t = new Date(Date.UTC(y + 2, m - 1, d));
+            if (t.getUTCMonth() !== m - 1) { // 29 Feb into a non-leap year: use the last day of that month
+                return new Date(Date.UTC(y + 2, m, 0)).toISOString().slice(0, 10);
+            }
+            return t.toISOString().slice(0, 10);
+        }
         document.addEventListener('DOMContentLoaded', function() {
+            const startInput = document.getElementById('contract_start');
+            const endInput = document.getElementById('contract_end');
+            if (startInput && endInput) {
+                startInput.addEventListener('change', function() {
+                    if (startInput.value) {
+                        endInput.value = twoYearsAfter(startInput.value);
+                    }
+                });
+            }
+
             const downloadSection = document.getElementById('downloadSection');
             const contractHistory = document.getElementById('contractHistory');
             const historyTableBody = document.getElementById('historyTableBody');

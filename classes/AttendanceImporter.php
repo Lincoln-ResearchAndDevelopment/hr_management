@@ -9,7 +9,7 @@ class AttendanceImporter
 {
     // Flat payroll deduction per late arrival / per absent day (naira).
     public const LATE_DEDUCTION = 1000;
-    public const ABSENT_DEDUCTION = 1000;
+    public const ABSENT_DEDUCTION = 5000;
 
     // Header names accepted for the staff ID column in CSV / Excel tables.
     private const ID_COLUMN_ALIASES = ['staff_id', 'enroll_id', 'attendance_id'];
@@ -683,20 +683,20 @@ class AttendanceImporter
             if ($result['success']) {
                 $processed++;
 
-                // If late arrival, add payroll deduction - once per day, so
-                // re-importing the same file doesn't deduct it again.
-                if ($is_late && !in_array($result['previous_status'] ?? null, ['late', 'absent'], true)) {
-                    $this->addLateArrivalDeduction($staff['id'], $attendance_date, $staff['campus_location'] ?? null);
+                // A day costs what its status costs (present 0, late, absent), and
+                // payroll is only ever adjusted by the DIFFERENCE from what the day
+                // was already charged. So re-importing the same file changes nothing,
+                // a late day that turns out to be absent is topped up to the absent
+                // amount, and a corrected file (absent -> present) takes it back off.
+                $charged = $this->statusAmount($status) - $this->statusAmount($result['previous_status'] ?? null);
+                if ($charged !== 0) {
+                    $this->addAttendanceDeduction($staff['id'], $attendance_date, $staff['campus_location'] ?? null, $charged);
                 }
-
-                // Absent: deduct once per day. Skip when the day was already
-                // absent (re-import) or already deducted as late.
+                if ($is_late) {
+                    $late_arrivals[count($late_arrivals) - 1]['charged'] = $charged;
+                }
                 if ($is_absent) {
-                    $deduct = !in_array($result['previous_status'] ?? null, ['absent', 'late'], true);
-                    if ($deduct) {
-                        $this->addAttendanceDeduction($staff['id'], $attendance_date, $staff['campus_location'] ?? null, self::ABSENT_DEDUCTION);
-                    }
-                    $absences[count($absences) - 1]['deducted'] = $deduct;
+                    $absences[count($absences) - 1]['charged'] = $charged;
                 }
             } else {
                 $errors[] = "Row {$record['row_number']}: " . $result['message'];
@@ -872,9 +872,15 @@ class AttendanceImporter
     /**
      * Add late arrival deduction to payroll
      */
-    private function addLateArrivalDeduction($staff_id, $attendance_date, $campus_location = null)
+    /**
+     * What a day with this attendance status costs in payroll.
+     */
+    private function statusAmount($status)
     {
-        return $this->addAttendanceDeduction($staff_id, $attendance_date, $campus_location, self::LATE_DEDUCTION);
+        if ($status === 'absent') {
+            return self::ABSENT_DEDUCTION;
+        }
+        return $status === 'late' ? self::LATE_DEDUCTION : 0;
     }
 
     /**
@@ -895,6 +901,9 @@ class AttendanceImporter
         $payroll = $check_payroll->get_result()->fetch_assoc();
 
         if (!$payroll) {
+            if ($amount < 0) {
+                return true; // nothing was ever deducted, so there is nothing to take back
+            }
             // Create payroll record if it doesn't exist
             $salary = $this->getStaffBasicSalary($staff_id);
             if (!$salary) {
@@ -914,10 +923,10 @@ class AttendanceImporter
             $insert_payroll->execute();
         }
 
-        // Add/Update late arrival deduction
+        // Add (or, for a negative amount, take back) attendance deduction - never below 0
         $update_deduction = $this->conn->prepare(
             "UPDATE payroll 
-             SET attendance_deduction = attendance_deduction + ?
+             SET attendance_deduction = GREATEST(0, attendance_deduction + ?)
              WHERE staff_id = ? AND month_year = ?"
         );
         $update_deduction->bind_param("dis", $amount, $staff_id, $month_year);

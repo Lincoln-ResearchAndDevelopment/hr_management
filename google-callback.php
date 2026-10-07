@@ -86,7 +86,7 @@ try {
 
             if ($user_data) {
                 $mailer->sendLoginNotification(
-                    $user_data['email'],
+                    Mailer::officialEmail($conn, $user_data['email']),
                     $user_data['first_name'],
                     date('Y-m-d H:i:s'),
                     $_SERVER['REMOTE_ADDR'] ?? 'Unknown',

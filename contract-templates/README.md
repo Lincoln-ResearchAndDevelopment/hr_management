@@ -15,16 +15,21 @@ To enable automatic data replacement, use the following placeholders in your DOC
 
 ### Available Placeholders
 
-| Placeholder                                           | Description         | Example Value        |
-| ----------------------------------------------------- | ------------------- | -------------------- |
-| `${name}` or `${Name}` or `${NAME}`                   | Staff full name     | John Doe             |
-| `${position}` or `${Position}` or `${POSITION}`       | Job title/position  | Senior Lecturer      |
-| `${department}` or `${Department}` or `${DEPARTMENT}` | Department name     | Chemistry Department |
-| `${salary}` or `${Salary}`                            | Salary amount       | N500,000 per month   |
-| `${date}` or `${Date}`                                | Contract issue date | 25th February, 2026  |
-| `${start_date}` or `${StartDate}`                     | Contract start date | 1st March, 2026      |
-| `${end_date}` or `${EndDate}`                         | Contract end date   | 28th February, 2027  |
-| `${email}` or `${Email}`                              | Staff email address | john.doe@example.com |
+These are the placeholders both templates now use. Type them exactly, in one piece, in Word (use `${name}`, not `$ {name}`).
+
+| Placeholder        | Description                                  | Example Value                         |
+| ------------------ | -------------------------------------------- | ------------------------------------- |
+| `${date}`           | Date the letter is issued                    | Tuesday, October 6, 2026              |
+| `${name}`           | Staff full name                              | Chinedu Okoro                         |
+| `${name_caps}`      | Staff full name in capitals                  | CHINEDU OKORO                         |
+| `${address}`        | Staff address (one line)                     | 12 Test Street, Garki, Abuja, Nigeria |
+| `${position}`       | Job title/position                           | Senior Lecturer                       |
+| `${department}`     | Department name                              | Mass Communication                    |
+| `${start_date}`     | Contract start date                          | 6th October, 2026                     |
+| `${end_date}`       | Contract end date                            | 6th October, 2028                     |
+| `${duration}`       | Contract length, worked out from the dates   | Two (2) Year(s)                       |
+| `${salary}`         | Salary as entered (a plain number becomes N150,000 monthly) | ₦150,000 monthly |
+| `${email}`          | Staff email address                          | name@example.com                      |
 
 ### How to Use Placeholders
 

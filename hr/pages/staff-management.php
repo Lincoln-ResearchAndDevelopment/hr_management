@@ -88,6 +88,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $hire_date = trim($_POST['hire_date'] ?? '');
             $contract_start_date = trim($_POST['contract_start_date'] ?? '');
             $contract_end_date = trim($_POST['contract_end_date'] ?? '');
+            // No end date given: it's 2 years after the start date.
+            if ($contract_start_date !== '' && $contract_end_date === '' && strtotime($contract_start_date)) {
+                $contract_end_date = (new DateTime($contract_start_date))->modify('+2 years')->format('Y-m-d');
+            }
             $salary = floatval($_POST['salary'] ?? 0);
 
             if (!in_array($campus_location, $campus_locations, true)) {
@@ -152,8 +156,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 if ($insert_staff->execute()) {
                     // Send credentials email to original signup email
                     $mailer = new Mailer();
+                    // Staff are emailed at their official Lincoln email only, never the personal one.
                     $email_sent = $mailer->sendStaffEmploymentCredentials(
-                        $email,
+                        $lincoln_email !== '' ? $lincoln_email : $email,
                         $first_name,
                         $last_name,
                         $lincoln_email,
@@ -162,7 +167,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         $department
                     );
 
-                    $email_status = $email_sent ? 'Credentials sent to their email' : 'Note: Email sending may have failed';
+                    $email_status = $email_sent ? 'Credentials sent to their Lincoln email' : 'Note: Email sending may have failed';
 
                     $status_message = '<div class="alert alert-success alert-dismissible fade show" role="alert">
                         <i class="fas fa-check-circle"></i> Staff member added successfully!<br>
@@ -892,11 +897,12 @@ function getRoleTier($position)
                                 </div>
                                 <div class="col-md-6 mb-3">
                                     <label class="form-label">Contract Start Date</label>
-                                    <input type="date" class="form-control" name="contract_start_date">
+                                    <input type="date" class="form-control" name="contract_start_date" id="contract_start_date">
                                 </div>
                                 <div class="col-md-6 mb-3">
                                     <label class="form-label">Contract End Date</label>
-                                    <input type="date" class="form-control" name="contract_end_date">
+                                    <input type="date" class="form-control" name="contract_end_date" id="contract_end_date">
+                                    <small class="text-muted">Filled in automatically as 2 years after the start date. You can still change it.</small>
                                 </div>
                             </div>
 
@@ -921,6 +927,27 @@ function getRoleTier($position)
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
     <script>
+        // Contract end date = same day, 2 years after the start date (6 Oct 2026 -> 6 Oct 2028).
+        function twoYearsAfter(iso) {
+            const [y, m, d] = iso.split('-').map(Number);
+            const t = new Date(Date.UTC(y + 2, m - 1, d));
+            if (t.getUTCMonth() !== m - 1) { // 29 Feb into a non-leap year: use the last day of that month
+                return new Date(Date.UTC(y + 2, m, 0)).toISOString().slice(0, 10);
+            }
+            return t.toISOString().slice(0, 10);
+        }
+        document.addEventListener('DOMContentLoaded', function() {
+            const startInput = document.getElementById('contract_start_date');
+            const endInput = document.getElementById('contract_end_date');
+            if (startInput && endInput) {
+                startInput.addEventListener('change', function() {
+                    if (startInput.value) {
+                        endInput.value = twoYearsAfter(startInput.value);
+                    }
+                });
+            }
+        });
+
         // Auto-dismiss alerts after 6 seconds
         document.addEventListener('DOMContentLoaded', function() {
             const alerts = document.querySelectorAll('.alert');

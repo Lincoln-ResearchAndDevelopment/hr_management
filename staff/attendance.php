@@ -5,6 +5,7 @@
  */
 session_start();
 include '../config.php';
+include '../classes/AttendanceImporter.php'; // fine amounts (AttendanceImporter::LATE_DEDUCTION / ABSENT_DEDUCTION)
 
 // Check if staff is logged in
 if (!isset($_SESSION['staff_id'])) {
@@ -15,7 +16,7 @@ if (!isset($_SESSION['staff_id'])) {
 $staff_id = $_SESSION['staff_id'];
 
 // Get staff information
-$staff_query = $conn->prepare("SELECT id, first_name, last_name, campus_location FROM staff WHERE id = ?");
+$staff_query = $conn->prepare("SELECT id, first_name, last_name, campus_location, hire_date FROM staff WHERE id = ?");
 $staff_query->bind_param("i", $staff_id);
 $staff_query->execute();
 $staff = $staff_query->get_result()->fetch_assoc();
@@ -41,69 +42,135 @@ $attendance_query->bind_param("iii", $staff_id, $year, $month);
 $attendance_query->execute();
 $attendance_records = $attendance_query->get_result()->fetch_all(MYSQLI_ASSOC);
 
-// Calculate monthly summary
-$present_days = 0;
-$absent_days = 0;
-$late_days = 0;
-
-foreach ($attendance_records as $record) {
-    switch ($record['status']) {
-        case 'present':
-            $present_days++;
-            break;
-        case 'absent':
-            $absent_days++;
-            break;
-        case 'late':
-            $late_days++;
-            break;
-    }
-}
-
-// Working days = weekdays only (Mon-Fri), excluding public holidays that
-// apply to this staff member's campus (or all campuses). Saturdays,
-// Sundays, and public holidays are not working days and are excluded
-// from the total.
-function countWeekdaysInMonth($month, $year, $conn = null, $campus_location = null)
+// Working days (Mon-Fri, minus public holidays that apply to this campus) between two
+// dates, inclusive, as a list of 'Y-m-d' dates. Weekends and holidays are never working days.
+function getWorkingDaysBetween($from, $to, $conn, $campus_location = null)
 {
-    $start = new DateTime(sprintf('%04d-%02d-01', $year, $month));
-    $end = (clone $start)->modify('last day of this month')->modify('+1 day');
-    $period = new DatePeriod($start, new DateInterval('P1D'), $end);
-
+    if ($from > $to) {
+        return [];
+    }
     $holidays = [];
-    if ($conn) {
-        $range_start = $start->format('Y-m-d');
-        $range_end = (clone $end)->modify('-1 day')->format('Y-m-d');
-        $sql = "SELECT holiday_date FROM public_holidays WHERE holiday_date BETWEEN ? AND ? AND (campus_location IS NULL";
-        $types = 'ss';
-        $params = [$range_start, $range_end];
-        if (!empty($campus_location)) {
-            $sql .= " OR campus_location = ?";
-            $types .= 's';
-            $params[] = $campus_location;
-        }
-        $sql .= ")";
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param($types, ...$params);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        while ($row = $result->fetch_assoc()) {
-            $holidays[] = $row['holiday_date'];
+    $sql = "SELECT holiday_date FROM public_holidays WHERE holiday_date BETWEEN ? AND ? AND (campus_location IS NULL";
+    $types = 'ss';
+    $params = [$from, $to];
+    if (!empty($campus_location)) {
+        $sql .= " OR campus_location = ?";
+        $types .= 's';
+        $params[] = $campus_location;
+    }
+    $stmt = $conn->prepare($sql . ")");
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    foreach ($stmt->get_result()->fetch_all(MYSQLI_ASSOC) as $row) {
+        $holidays[] = $row['holiday_date'];
+    }
+    $days = [];
+    $period = new DatePeriod(new DateTime($from), new DateInterval('P1D'), (new DateTime($to))->modify('+1 day'));
+    foreach ($period as $d) {
+        if ((int) $d->format('N') < 6 && !in_array($d->format('Y-m-d'), $holidays, true)) {
+            $days[] = $d->format('Y-m-d');
         }
     }
-
-    $count = 0;
-    foreach ($period as $date) {
-        $d = $date->format('Y-m-d');
-        if ((int) $date->format('N') < 6 && !in_array($d, $holidays, true)) {
-            $count++;
-        }
-    }
-    return $count;
+    return $days;
 }
 
-$total_working_days = countWeekdaysInMonth($month, $year, $conn, $staff['campus_location'] ?? null);
+$campus = $staff['campus_location'] ?? null;
+$today = date('Y-m-d');
+$month_start = sprintf('%04d-%02d-01', $year, $month);
+$month_end = (new DateTime($month_start))->modify('last day of this month')->format('Y-m-d');
 
+// Counting starts on the hire date, or on the first day they actually have attendance if
+// that is earlier. It runs up to the last day anyone has attendance uploaded for (never past
+// today), so days HR has not uploaded yet are not counted as absences.
+$start_candidates = [!empty($staff['hire_date']) ? $staff['hire_date'] : $month_start];
+if (!empty($attendance_records)) {
+    $start_candidates[] = min(array_column($attendance_records, 'attendance_date'));
+}
+$counted_from = max($month_start, min($start_candidates));
+
+$data_query = $conn->prepare("SELECT MAX(attendance_date) AS last_day FROM attendance_records WHERE attendance_date BETWEEN ? AND ?");
+$data_query->bind_param('ss', $month_start, $month_end);
+$data_query->execute();
+$data_through = $data_query->get_result()->fetch_assoc()['last_day'] ?? null;
+$counted_to = $data_through ? min($month_end, $data_through, $today) : null;
+
+$month_working_days = getWorkingDaysBetween($counted_from, $month_end, $conn, $campus);
+$total_working_days = count($month_working_days);
+
+// Sign-outs only count against someone once the month's upload actually carries sign-out
+// times - a file with no sign-out column says nothing about who did or didn't sign out.
+$month_tracks_signout = false;
+$by_date = [];
+foreach ($attendance_records as $record) {
+    $by_date[$record['attendance_date']] = $record;
+    if (!empty($record['time_out'])) {
+        $month_tracks_signout = true;
+    }
+}
+
+// Go through every working day so far and decide what it was:
+//   Present        = signed in (and signed out)             - on time or late
+//   Not signed out = signed in on a day that is over, never signed out  -> Absent
+//   Did not come   = no sign-in at all on that working day               -> Absent
+// So Present + Absent always equals the working days counted so far.
+$present_days = 0;
+$late_days = 0;
+$not_signed_out_days = 0;
+$did_not_come_days = 0;
+$table_rows = [];
+$counted_days = [];
+
+foreach ($month_working_days as $day) {
+    if ($counted_to === null || $day > $counted_to) {
+        continue;
+    }
+    $record = $by_date[$day] ?? null;
+    $counted_days[$day] = true;
+
+    if ($record === null) {
+        if ($day === $today) {
+            unset($counted_days[$day]); // today's upload may not be in yet
+            continue;
+        }
+        $did_not_come_days++;
+        $table_rows[] = ['attendance_date' => $day, 'time_in' => null, 'time_out' => null, 'display_status' => 'absent', 'reason' => 'Did not come'];
+        continue;
+    }
+
+    $signed_in = !empty($record['time_in']);
+    $signed_out = !empty($record['time_out']);
+    $recorded_absent = $record['status'] === 'absent';
+
+    if (!$signed_in) {
+        $did_not_come_days++;
+        $record['display_status'] = 'absent';
+        $record['reason'] = 'Did not come';
+    } elseif ($day < $today && !$signed_out && ($recorded_absent || $month_tracks_signout)) {
+        $not_signed_out_days++;
+        $record['display_status'] = 'absent';
+        $record['reason'] = 'Not signed out';
+    } else {
+        $present_days++;
+        $record['display_status'] = $record['status'] === 'late' ? 'late' : 'present';
+        $record['reason'] = '';
+        if ($record['status'] === 'late') {
+            $late_days++;
+        }
+    }
+    $table_rows[] = $record;
+}
+
+// Any record on a day that was not counted above (e.g. later than the counted range) is still listed.
+foreach ($attendance_records as $record) {
+    if (!isset($counted_days[$record['attendance_date']]) && !in_array($record['attendance_date'], array_column($table_rows, 'attendance_date'), true)) {
+        $record['display_status'] = $record['status'];
+        $record['reason'] = '';
+        $table_rows[] = $record;
+    }
+}
+usort($table_rows, fn($x, $y) => strcmp($y['attendance_date'], $x['attendance_date']));
+
+$absent_days = $not_signed_out_days + $did_not_come_days;
 // Check if time_in is late (after 8:45 AM)
 function isLateTimeIn($time_in)
 {
@@ -654,13 +721,25 @@ function isLateTimeIn($time_in)
             <div class="stat-card">
                 <i class="fas fa-times-circle" style="font-size: 2rem; color: #dc3545;"></i>
                 <div class="stat-number" style="color: #dc3545;"><?php echo $absent_days; ?></div>
-                <div class="stat-label">Days Absent</div>
+                <div class="stat-label">Days Absent (-₦<?php echo number_format(AttendanceImporter::ABSENT_DEDUCTION); ?> each)</div>
+            </div>
+
+            <div class="stat-card">
+                <i class="fas fa-right-from-bracket" style="font-size: 2rem; color: #fd7e14;"></i>
+                <div class="stat-number" style="color: #fd7e14;"><?php echo $not_signed_out_days; ?></div>
+                <div class="stat-label">Days Not Signed Out (counted as absent)</div>
+            </div>
+
+            <div class="stat-card">
+                <i class="fas fa-user-slash" style="font-size: 2rem; color: #6c757d;"></i>
+                <div class="stat-number" style="color: #6c757d;"><?php echo $did_not_come_days; ?></div>
+                <div class="stat-label">Days Did Not Come (counted as absent)</div>
             </div>
 
             <div class="stat-card">
                 <i class="fas fa-clock" style="font-size: 2rem; color: #ffc107;"></i>
                 <div class="stat-number" style="color: #ffc107;"><?php echo $late_days; ?></div>
-                <div class="stat-label">Days Late (-₦1000 each)</div>
+                <div class="stat-label">Days Late (-₦<?php echo number_format(AttendanceImporter::LATE_DEDUCTION); ?> each)</div>
             </div>
         </div>
 
@@ -680,16 +759,16 @@ function isLateTimeIn($time_in)
         ?>
         <?php if ($deductions > 0): ?>
             <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; border-radius: 8px; margin-bottom: 30px;">
-                <h6 style="color: #856404; margin-bottom: 8px;"><i class="fas fa-exclamation-triangle"></i> Late Arrival Deductions</h6>
+                <h6 style="color: #856404; margin-bottom: 8px;"><i class="fas fa-exclamation-triangle"></i> Attendance Deductions</h6>
                 <p style="margin-bottom: 0; color: #856404;">
-                    You have <strong>₦<?php echo $deductions; ?></strong> in attendance deductions for <?php echo date('F Y', mktime(0, 0, 0, $month, 1, $year)); ?> due to late arrivals after 9:00 AM. This will be deducted from your salary.
+                    You have <strong>₦<?php echo $deductions; ?></strong> in attendance deductions for <?php echo date('F Y', mktime(0, 0, 0, $month, 1, $year)); ?> due to late arrivals after 9:00 AM (₦<?php echo number_format(AttendanceImporter::LATE_DEDUCTION); ?> each) and absent days, including days you signed in but did not sign out (₦<?php echo number_format(AttendanceImporter::ABSENT_DEDUCTION); ?> each). This will be deducted from your salary.
                 </p>
             </div>
         <?php endif; ?>
 
         <!-- Attendance Table -->
         <div class="table-container">
-            <?php if (!empty($attendance_records)): ?>
+            <?php if (!empty($table_rows)): ?>
                 <table class="table">
                     <thead>
                         <tr>
@@ -700,7 +779,7 @@ function isLateTimeIn($time_in)
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($attendance_records as $record): ?>
+                        <?php foreach ($table_rows as $record): ?>
                             <tr>
                                 <td><?php echo date('M d, Y (l)', strtotime($record['attendance_date'])); ?></td>
                                 <td>
@@ -719,9 +798,12 @@ function isLateTimeIn($time_in)
                                 </td>
                                 <td><?php echo ($record['time_out']) ? date('h:i A', strtotime($record['time_out'])) : '----'; ?></td>
                                 <td>
-                                    <span class="status-badge status-<?php echo $record['status']; ?>">
-                                        <?php echo ucfirst($record['status']); ?>
+                                    <span class="status-badge status-<?php echo $record['display_status']; ?>">
+                                        <?php echo ucfirst($record['display_status']); ?>
                                     </span>
+                                    <?php if (!empty($record['reason'])): ?>
+                                        <small class="text-muted"><?php echo htmlspecialchars($record['reason']); ?></small>
+                                    <?php endif; ?>
                                 </td>
                             </tr>
                         <?php endforeach; ?>

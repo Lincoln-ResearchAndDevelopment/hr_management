@@ -556,6 +556,25 @@ class Mailer
     }
 
     /**
+     * The address a staff member should be emailed at. Once someone is on
+     * staff, every message goes to their official Lincoln email only - never
+     * their personal one. Anyone who is not staff (e.g. a job applicant), or
+     * a staff record with no Lincoln email, keeps the address passed in.
+     */
+    public static function officialEmail($conn, $email)
+    {
+        $stmt = $conn->prepare(
+            "SELECT lincoln_email FROM staff
+             WHERE (email = ? OR lincoln_email = ?) AND lincoln_email IS NOT NULL AND lincoln_email <> ''
+             LIMIT 1"
+        );
+        $stmt->bind_param('ss', $email, $email);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        return $row['lincoln_email'] ?? $email;
+    }
+
+    /**
      * Load Email Template
      */
     private function getTemplate($templateName, $variables = [])

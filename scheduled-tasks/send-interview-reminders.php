@@ -75,7 +75,7 @@ foreach ($interviews as $interview) {
             s.id,
             s.first_name,
             s.last_name,
-            u.email,
+            COALESCE(NULLIF(s.lincoln_email, ''), u.email) AS email,
             ist.role
         FROM interview_staff ist
         JOIN staff s ON ist.staff_id = s.id

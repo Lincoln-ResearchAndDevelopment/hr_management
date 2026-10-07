@@ -360,9 +360,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['attendance_file'])) {
                                     <div class="info-box">
                                         <h6 style="margin-bottom: 10px;">Total Deductions</h6>
                                         <?php
-                                        $absent_deducted = count(array_filter($upload_result['absences'], fn($a) => !empty($a['deducted'])));
-                                        $total_deducted = count($upload_result['late_arrivals']) * AttendanceImporter::LATE_DEDUCTION
-                                            + $absent_deducted * AttendanceImporter::ABSENT_DEDUCTION;
+                                        // What this upload actually changed in payroll (a re-upload changes nothing)
+                                        $total_deducted = array_sum(array_column($upload_result['late_arrivals'], 'charged'))
+                                            + array_sum(array_column($upload_result['absences'], 'charged'));
                                         ?>
                                         <h3 style="color: #dc3545; margin: 0;">₦<?php echo $total_deducted; ?></h3>
                                     </div>
@@ -394,7 +394,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['attendance_file'])) {
                                                         <td><?php echo htmlspecialchars($late['staff_name']); ?></td>
                                                         <td><?php echo date('M d, Y', strtotime($late['date'])); ?></td>
                                                         <td><span class="late-badge"><?php echo $late['check_in_time']; ?></span></td>
-                                                        <td><span class="deduction-badge">-₦<?php echo AttendanceImporter::LATE_DEDUCTION; ?></span></td>
+                                                        <td>
+                                                            <?php if (($late['charged'] ?? 0) > 0): ?>
+                                                                <span class="deduction-badge">-₦<?php echo number_format($late['charged']); ?></span>
+                                                            <?php else: ?>
+                                                                <span class="text-muted">No change (already charged)</span>
+                                                            <?php endif; ?>
+                                                        </td>
                                                     </tr>
                                                 <?php endforeach; ?>
                                             </tbody>
@@ -423,10 +429,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['attendance_file'])) {
                                                         <td><?php echo date('M d, Y', strtotime($absent['date'])); ?></td>
                                                         <td><span class="late-badge"><?php echo $absent['check_in_time']; ?></span></td>
                                                         <td>
-                                                            <?php if (!empty($absent['deducted'])): ?>
-                                                                <span class="deduction-badge">-₦<?php echo AttendanceImporter::ABSENT_DEDUCTION; ?></span>
+                                                            <?php if (($absent['charged'] ?? 0) > 0): ?>
+                                                                <span class="deduction-badge">-₦<?php echo number_format($absent['charged']); ?></span>
+                                                                <?php if ($absent['charged'] < AttendanceImporter::ABSENT_DEDUCTION): ?>
+                                                                    <small class="text-muted">(top-up of an earlier charge)</small>
+                                                                <?php endif; ?>
                                                             <?php else: ?>
-                                                                <span class="text-muted">Already deducted</span>
+                                                                <span class="text-muted">No change (already charged)</span>
                                                             <?php endif; ?>
                                                         </td>
                                                     </tr>
