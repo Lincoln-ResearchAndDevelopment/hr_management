@@ -383,20 +383,23 @@ class LeaveManager
     }
 
     /**
-     * Whether a free-text staff position reads as Head of Department.
-     * Same classification HR's staff list already uses to badge HODs -
-     * there is no dedicated role/flag for it, position is the only signal.
+     * Whether this staff member has been assigned the Head of Department role
+     * by HR. Only active academic staff can hold it.
      */
-    public static function isHeadOfDepartment($position)
+    public function isHeadOfDepartment($staff_id)
     {
-        $p = strtolower($position ?? '');
-        return str_contains($p, 'head of department') || str_contains($p, 'hod');
+        $stmt = $this->conn->prepare(
+            "SELECT 1 FROM staff WHERE id = ? AND is_hod = 1 AND staff_type = 'academic' AND status = 'active'"
+        );
+        $stmt->bind_param('i', $staff_id);
+        $stmt->execute();
+        return $stmt->get_result()->num_rows > 0;
     }
 
     /**
-     * Active staff in a department who are classified as its Head of
-     * Department, optionally excluding one staff_id (e.g. the requester,
-     * so a HOD's own leave request doesn't route to themselves).
+     * Active academic staff HR has assigned as Head of Department of a
+     * department, optionally excluding one staff_id (e.g. the requester, so a
+     * HOD's own leave request doesn't route to themselves).
      */
     public function getDepartmentHeads($department, $excludeStaffId = null)
     {
@@ -407,7 +410,7 @@ class LeaveManager
         $query = "SELECT id, first_name, last_name, email, lincoln_email, position
                     FROM staff
                     WHERE department = ? AND status = 'active'
-                        AND (LOWER(position) LIKE '%head of department%' OR LOWER(position) LIKE '%hod%')";
+                        AND is_hod = 1 AND staff_type = 'academic'";
         $types = 's';
         $params = [$department];
 
@@ -424,6 +427,52 @@ class LeaveManager
         return $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
     }
 
+    /**
+     * Where a staff member's leave request goes first.
+     *  - non-academic staff: HR approval only, no HOD step
+     *  - academic staff: their department's assigned HOD(s); if there is none
+     *    (or they are the HOD themselves) it goes straight to HR so it is never
+     *    left waiting on nobody.
+     * Returns ['skip' => bool, 'reason' => string, 'heads' => array].
+     */
+    public function getLeaveApprovalRoute($staff_id)
+    {
+        $stmt = $this->conn->prepare("SELECT department, staff_type, is_hod FROM staff WHERE id = ?");
+        $stmt->bind_param('i', $staff_id);
+        $stmt->execute();
+        $staff = $stmt->get_result()->fetch_assoc();
+
+        if (!$staff) {
+            return ['skip' => true, 'reason' => 'Sent to HR for approval.', 'heads' => []];
+        }
+        if ($staff['staff_type'] === 'non_academic') {
+            return ['skip' => true, 'reason' => 'Non-academic staff: HR approval only (no Head of Department review).', 'heads' => []];
+        }
+
+        $heads = $this->getDepartmentHeads($staff['department'], $staff_id);
+        if (!empty($heads)) {
+            return ['skip' => false, 'reason' => '', 'heads' => $heads];
+        }
+        if ((int) $staff['is_hod'] === 1) {
+            return ['skip' => true, 'reason' => 'Requester is the Head of Department: sent straight to HR.', 'heads' => []];
+        }
+        return ['skip' => true, 'reason' => 'No Head of Department is assigned for this department: sent straight to HR.', 'heads' => []];
+    }
+
+    /**
+     * Send a staff member's leave requests that are still waiting on a HOD
+     * straight to HR (used when HR makes them non-academic). Returns how many.
+     */
+    public function sendPendingLeaveToHr($staff_id, $reason)
+    {
+        $stmt = $this->conn->prepare(
+            "UPDATE leave_requests SET status = 'hod_approved', hod_skipped = 1, hod_remarks = ?
+             WHERE staff_id = ? AND status = 'pending'"
+        );
+        $stmt->bind_param('si', $reason, $staff_id);
+        $stmt->execute();
+        return $stmt->affected_rows;
+    }
     /**
      * Leave requests from a department awaiting this HOD's first-pass
      * decision (status 'pending'), excluding the HOD's own requests.
@@ -466,6 +515,7 @@ class LeaveManager
                 JOIN leave_types lt ON lt.id = lr.leave_type_id
                 JOIN staff st ON st.id = lr.staff_id
                 WHERE lr.status IN ('hod_approved', 'hod_rejected', 'approved', 'rejected')
+                    AND lr.hod_skipped = 0
                     AND st.department = ?";
         $types = 's';
         $params = [$department];

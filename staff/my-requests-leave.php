@@ -51,7 +51,7 @@ $has_leave_type_column = $column_check && $column_check->num_rows > 0;
 if ($has_leave_type_column && $filter_leave_type) {
     $requests_query = $conn->prepare(
         "SELECT lr.id, lr.request_date, lr.start_date, lr.end_date, lr.total_days, lr.reason, lr.status, lr.created_at,
-                lr.hod_remarks, lr.hr_remarks,
+                lr.hod_remarks, lr.hod_skipped, lr.hr_remarks,
                 lt.name as leave_type_name
          FROM leave_requests lr
          LEFT JOIN leave_types lt ON lr.leave_type_id = lt.id
@@ -62,7 +62,7 @@ if ($has_leave_type_column && $filter_leave_type) {
 } elseif ($has_leave_type_column) {
     $requests_query = $conn->prepare(
         "SELECT lr.id, lr.request_date, lr.start_date, lr.end_date, lr.total_days, lr.reason, lr.status, lr.created_at,
-                lr.hod_remarks, lr.hr_remarks,
+                lr.hod_remarks, lr.hod_skipped, lr.hr_remarks,
                 lt.name as leave_type_name
          FROM leave_requests lr
          LEFT JOIN leave_types lt ON lr.leave_type_id = lt.id
@@ -73,7 +73,7 @@ if ($has_leave_type_column && $filter_leave_type) {
 } else {
     $requests_query = $conn->prepare(
         "SELECT id, request_date, start_date, end_date, total_days, reason, status, created_at,
-                hod_remarks, hr_remarks,
+                hod_remarks, hod_skipped, hr_remarks,
                 'N/A' as leave_type_name
          FROM leave_requests
          WHERE staff_id = ?
@@ -88,8 +88,12 @@ $requests = $requests_query->get_result()->fetch_all(MYSQLI_ASSOC);
 /**
  * Friendly label for a leave request's two-stage (HOD then HR) status.
  */
-function leaveStatusLabel($status)
+function leaveStatusLabel($status, $hod_skipped = 0)
 {
+    // A request that never needed a HOD is simply waiting on HR.
+    if ($hod_skipped && $status === 'hod_approved') {
+        return 'Awaiting HR';
+    }
     $labels = [
         'pending'      => 'Pending HOD Review',
         'hod_approved' => 'HOD Approved - Awaiting HR',
@@ -537,7 +541,7 @@ function leaveStatusLabel($status)
                     <span>My Profile</span>
                 </a>
             </li>
-            <?php if (LeaveManager::isHeadOfDepartment($staff['position'] ?? '')): ?>
+            <?php if ($leaveManager->isHeadOfDepartment($staff_id)): ?>
                 <li>
                     <a href="hod-dashboard.php">
                         <i class="fas fa-user-tie"></i>
@@ -670,7 +674,7 @@ function leaveStatusLabel($status)
                                 <td><?php echo $request['total_days']; ?> days</td>
                                 <td>
                                     <span class="status-badge status-<?php echo $request['status']; ?>">
-                                        <?php echo leaveStatusLabel($request['status']); ?>
+                                        <?php echo leaveStatusLabel($request['status'], $request['hod_skipped'] ?? 0); ?>
                                     </span>
                                 </td>
                                 <td>

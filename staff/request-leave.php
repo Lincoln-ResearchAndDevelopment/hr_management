@@ -235,19 +235,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $result = $leaveManager->createLeaveRequest($request_data);
 
                 if ($result['success']) {
-                    // Route to the requester's Head of Department first; only
-                    // fall back to going straight to HR when the department
-                    // has no HOD (or the requester is that department's only
-                    // HOD) so a request never gets stuck waiting on no one.
-                    $department_heads = $leaveManager->getDepartmentHeads($staff['department'] ?? '', $staff_id);
+                    // Academic staff go to their department's assigned Head of
+                    // Department first. Non-academic staff - and anyone whose
+                    // department has no assigned HOD (or who is the HOD) - go
+                    // straight to HR, so a request never waits on nobody.
+                    $route = $leaveManager->getLeaveApprovalRoute($staff_id);
+                    $department_heads = $route['heads'];
 
-                    if (empty($department_heads)) {
-                        $skip_reason = 'Auto-forwarded to HR: no Head of Department is configured for this department.';
-                        $skip_stmt = $conn->prepare("UPDATE leave_requests SET status = 'hod_approved', hod_remarks = ? WHERE id = ?");
-                        $skip_stmt->bind_param('si', $skip_reason, $result['request_id']);
+                    if ($route['skip']) {
+                        $skip_stmt = $conn->prepare("UPDATE leave_requests SET status = 'hod_approved', hod_skipped = 1, hod_remarks = ? WHERE id = ?");
+                        $skip_stmt->bind_param('si', $route['reason'], $result['request_id']);
                         $skip_stmt->execute();
 
-                        $message = 'Your request has been submitted successfully. Your department has no Head of Department on record, so it has been forwarded directly to HR for a decision.';
+                        $message = 'Your request has been submitted successfully and sent to HR for approval.';
                     } else {
                         $message = 'Your request has been submitted successfully and is pending review by your Head of Department, followed by HR\'s final decision.';
                     }
@@ -773,7 +773,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <span>My Profile</span>
                 </a>
             </li>
-            <?php if (LeaveManager::isHeadOfDepartment($staff['position'] ?? '')): ?>
+            <?php if ($leaveManager->isHeadOfDepartment($staff_id)): ?>
                 <li>
                     <a href="hod-dashboard.php">
                         <i class="fas fa-user-tie"></i>
@@ -935,7 +935,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <!-- Information Box -->
                     <div class="info-box">
                         <i class="fas fa-info-circle"></i>
-                        <strong> Important:</strong> Your leave request will first be reviewed by your Head of Department, then finalized by HR. Please ensure you select the correct leave type and provide all necessary details.
+                        <strong> Important:</strong> <?php echo $leaveManager->getLeaveApprovalRoute($staff_id)['skip'] ? 'Your leave request goes to HR for approval.' : 'Your leave request will first be reviewed by your Head of Department, then finalized by HR.'; ?> Please ensure you select the correct leave type and provide all necessary details.
                     </div>
 
                     <!-- Form -->

@@ -421,7 +421,7 @@ $leave_types = $leaveManager->getAvailableLeaveTypesForStaff($staff_id);
                     <span>My Profile</span>
                 </a>
             </li>
-            <?php if (LeaveManager::isHeadOfDepartment($staff['position'] ?? '')): ?>
+            <?php if ($leaveManager->isHeadOfDepartment($staff_id)): ?>
                 <li>
                     <a href="hod-dashboard.php">
                         <i class="fas fa-user-tie"></i>

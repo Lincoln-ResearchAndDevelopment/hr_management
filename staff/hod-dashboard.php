@@ -30,13 +30,13 @@ if (!$staff) {
     exit;
 }
 
-// Only Heads of Department may use this page
-if (!LeaveManager::isHeadOfDepartment($staff['position'] ?? '')) {
+$leaveManager = new LeaveManager($conn);
+
+// Only staff HR has assigned as Head of Department may use this page
+if (!$leaveManager->isHeadOfDepartment($staff_id)) {
     header('Location: dashboard.php');
     exit;
 }
-
-$leaveManager = new LeaveManager($conn);
 
 $message = '';
 $message_type = '';

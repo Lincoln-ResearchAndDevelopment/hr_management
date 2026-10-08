@@ -53,8 +53,11 @@ function notifyStaffOfLeaveDecision($conn, $leave_detail, $status, $hr_remarks)
  * in-between statuses ('hod_approved'/'hod_rejected') while they wait on
  * HR's final decision after the Head of Department has given theirs.
  */
-function requestStatusLabel($status)
+function requestStatusLabel($status, $hod_skipped = 0)
 {
+    if ($hod_skipped && $status === 'hod_approved') {
+        return 'Awaiting HR';
+    }
     $labels = [
         'pending'      => 'Pending',
         'hod_approved' => 'HOD Approved - Awaiting HR',
@@ -166,14 +169,14 @@ if ($check_total_days && $check_total_days->num_rows > 0) {
 // Build queries based on schema
 if ($leave_type_column_exists && $total_days_column_exists) {
     // New schema with leave_type_id and total_days
-    $late_arrival_query = "SELECT id, staff_id, request_date, late_arrival_time, NULL as second_time, NULL as start_date, NULL as end_date, NULL as total_days, NULL as leave_type_id, NULL as supporting_documents, reason, status, created_at, hr_remarks, NULL as leave_hod_remarks, 'late_arrival' as request_type FROM late_arrival_requests";
-    $temp_exit_query = "SELECT id, staff_id, request_date, start_time, end_time, NULL as start_date, NULL as end_date, NULL as total_days, NULL as leave_type_id, NULL as supporting_documents, reason, status, created_at, hod_remarks as hr_remarks, NULL as leave_hod_remarks, 'temporary_exit' as request_type FROM temporary_exit_requests";
-    $leave_query = "SELECT id, staff_id, request_date, NULL as late_arrival_time, NULL as second_time, start_date, end_date, total_days, leave_type_id, supporting_documents, reason, status, created_at, hr_remarks, hod_remarks as leave_hod_remarks, 'leave' as request_type FROM leave_requests";
+    $late_arrival_query = "SELECT id, staff_id, request_date, late_arrival_time, NULL as second_time, NULL as start_date, NULL as end_date, NULL as total_days, NULL as leave_type_id, NULL as supporting_documents, reason, status, created_at, hr_remarks, NULL as leave_hod_remarks, 0 as hod_skipped, 'late_arrival' as request_type FROM late_arrival_requests";
+    $temp_exit_query = "SELECT id, staff_id, request_date, start_time, end_time, NULL as start_date, NULL as end_date, NULL as total_days, NULL as leave_type_id, NULL as supporting_documents, reason, status, created_at, hod_remarks as hr_remarks, NULL as leave_hod_remarks, 0 as hod_skipped, 'temporary_exit' as request_type FROM temporary_exit_requests";
+    $leave_query = "SELECT id, staff_id, request_date, NULL as late_arrival_time, NULL as second_time, start_date, end_date, total_days, leave_type_id, supporting_documents, reason, status, created_at, hr_remarks, hod_remarks as leave_hod_remarks, hod_skipped, 'leave' as request_type FROM leave_requests";
 } else {
     // Old schema without leave_type_id
-    $late_arrival_query = "SELECT id, staff_id, request_date, late_arrival_time, NULL as second_time, NULL as start_date, NULL as end_date, NULL as supporting_documents, reason, status, created_at, hr_remarks, NULL as leave_hod_remarks, 'late_arrival' as request_type FROM late_arrival_requests";
-    $temp_exit_query = "SELECT id, staff_id, request_date, start_time, end_time, NULL as start_date, NULL as end_date, NULL as supporting_documents, reason, status, created_at, hod_remarks as hr_remarks, NULL as leave_hod_remarks, 'temporary_exit' as request_type FROM temporary_exit_requests";
-    $leave_query = "SELECT id, staff_id, request_date, NULL as late_arrival_time, NULL as second_time, start_date, end_date, NULL as supporting_documents, reason, status, created_at, hr_remarks, hod_remarks as leave_hod_remarks, 'leave' as request_type FROM leave_requests";
+    $late_arrival_query = "SELECT id, staff_id, request_date, late_arrival_time, NULL as second_time, NULL as start_date, NULL as end_date, NULL as supporting_documents, reason, status, created_at, hr_remarks, NULL as leave_hod_remarks, 0 as hod_skipped, 'late_arrival' as request_type FROM late_arrival_requests";
+    $temp_exit_query = "SELECT id, staff_id, request_date, start_time, end_time, NULL as start_date, NULL as end_date, NULL as supporting_documents, reason, status, created_at, hod_remarks as hr_remarks, NULL as leave_hod_remarks, 0 as hod_skipped, 'temporary_exit' as request_type FROM temporary_exit_requests";
+    $leave_query = "SELECT id, staff_id, request_date, NULL as late_arrival_time, NULL as second_time, start_date, end_date, NULL as supporting_documents, reason, status, created_at, hr_remarks, hod_remarks as leave_hod_remarks, hod_skipped, 'leave' as request_type FROM leave_requests";
 }
 
 // Build the query based on filters
@@ -862,7 +865,7 @@ unset($req);
                                 <?php echo str_replace('_', ' ', ucfirst($req['request_type'])); ?>
                             </span>
                             <span class="status-badge status-<?php echo $req['status']; ?>">
-                                <?php echo requestStatusLabel($req['status']); ?>
+                                <?php echo requestStatusLabel($req['status'], $req['hod_skipped'] ?? 0); ?>
                             </span>
                         </div>
                     </div>
@@ -945,7 +948,12 @@ unset($req);
                         </div>
                     </div>
 
-                    <?php if ($req['request_type'] === 'leave' && !empty($req['leave_hod_remarks'])): ?>
+                    <?php if ($req['request_type'] === 'leave' && !empty($req['hod_skipped'])): ?>
+                        <div class="remarks-section" style="border-left-color: #6c757d; background: #f4f5f7;">
+                            <h4 style="color: #495057;"><i class="fas fa-forward"></i> No Head of Department review needed</h4>
+                            <p><?php echo htmlspecialchars($req['leave_hod_remarks'] ?? 'Sent straight to HR.'); ?></p>
+                        </div>
+                    <?php elseif ($req['request_type'] === 'leave' && !empty($req['leave_hod_remarks'])): ?>
                         <div class="remarks-section" style="border-left-color: #0d6efd; background: #eef6ff;">
                             <h4 style="color: #0d6efd;">
                                 HOD Decision:

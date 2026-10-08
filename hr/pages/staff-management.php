@@ -41,6 +41,8 @@ if (!in_array($filter_campus, $campus_locations, true)) {
     $filter_campus = '';
 }
 
+require_once '../../classes/LeaveManager.php';
+
 /**
  * Validates a staff ID number (e.g. 000000190) for attendance matching.
  * Returns null if valid, otherwise an error message. Leading zeros don't make
@@ -93,6 +95,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $contract_end_date = (new DateTime($contract_start_date))->modify('+2 years')->format('Y-m-d');
             }
             $salary = floatval($_POST['salary'] ?? 0);
+            // Only academic staff can be a Head of Department, and only with a department.
+            $staff_type = ($_POST['staff_type'] ?? 'academic') === 'non_academic' ? 'non_academic' : 'academic';
+            $is_hod = ($staff_type === 'academic' && !empty($_POST['is_hod']) && $department !== '') ? 1 : 0;
 
             if (!in_array($campus_location, $campus_locations, true)) {
                 $campus_location = '';
@@ -148,10 +153,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
                 // Now insert the staff record
                 $insert_staff = $conn->prepare(
-                    "INSERT INTO staff (first_name, last_name, email, password, position, department, campus_location, hire_date, contract_start_date, contract_end_date, salary, lincoln_email, attendance_id, user_id, created_by)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                    "INSERT INTO staff (first_name, last_name, email, password, position, department, campus_location, hire_date, contract_start_date, contract_end_date, salary, lincoln_email, attendance_id, staff_type, is_hod, user_id, created_by)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 );
-                $insert_staff->bind_param("ssssssssssdssii", $first_name, $last_name, $email, $hashed_password, $position, $department, $campus_location, $hire_date, $contract_start_date, $contract_end_date, $salary, $lincoln_email, $attendance_id, $user_id, $user['id']);
+                $insert_staff->bind_param("ssssssssssdsssiii", $first_name, $last_name, $email, $hashed_password, $position, $department, $campus_location, $hire_date, $contract_start_date, $contract_end_date, $salary, $lincoln_email, $attendance_id, $staff_type, $is_hod, $user_id, $user['id']);
 
                 if ($insert_staff->execute()) {
                     // Send credentials email to original signup email
@@ -207,6 +212,45 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         <i class="fas fa-exclamation-circle"></i> Could not save the Staff ID.
                         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>';
+                }
+            }
+        } elseif ($action == 'set_staff_role' && $staff_id > 0) {
+            $new_type = ($_POST['staff_type'] ?? '') === 'non_academic' ? 'non_academic' : 'academic';
+            $want_hod = !empty($_POST['is_hod']) ? 1 : 0;
+
+            $info_stmt = $conn->prepare("SELECT first_name, last_name, department FROM staff WHERE id = ? AND created_by = ?");
+            $info_stmt->bind_param("ii", $staff_id, $user['id']);
+            $info_stmt->execute();
+            $info = $info_stmt->get_result()->fetch_assoc();
+
+            $alert = function ($type, $icon, $text) {
+                return '<div class="alert alert-' . $type . ' alert-dismissible fade show" role="alert"><i class="fas fa-' . $icon . '"></i> ' . htmlspecialchars($text) . '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
+            };
+
+            if (!$info) {
+                $status_message = $alert('danger', 'exclamation-circle', 'Staff member not found.');
+            } elseif ($new_type === 'academic' && $want_hod && trim($info['department'] ?? '') === '') {
+                $status_message = $alert('danger', 'exclamation-circle', 'Give this staff member a department before making them Head of Department.');
+            } else {
+                // Non-academic staff can never be a Head of Department.
+                $new_hod = $new_type === 'academic' ? $want_hod : 0;
+                $role_stmt = $conn->prepare("UPDATE staff SET staff_type = ?, is_hod = ? WHERE id = ? AND created_by = ?");
+                $role_stmt->bind_param("siii", $new_type, $new_hod, $staff_id, $user['id']);
+                if ($role_stmt->execute()) {
+                    $name = $info['first_name'] . ' ' . $info['last_name'];
+                    $note = '';
+                    if ($new_type === 'non_academic') {
+                        // Leave this person already had waiting on a HOD now goes straight to HR.
+                        $moved = (new LeaveManager($conn))->sendPendingLeaveToHr($staff_id, 'Non-academic staff: HR approval only (no Head of Department review).');
+                        if ($moved > 0) {
+                            $note = " $moved waiting leave request(s) were sent straight to HR.";
+                        }
+                    }
+                    $label = $new_type === 'non_academic' ? 'non-academic staff (leave needs HR approval only)'
+                        : ($new_hod ? 'academic staff and Head of Department of ' . $info['department'] : 'academic staff');
+                    $status_message = $alert('success', 'check-circle', "$name is now $label." . $note);
+                } else {
+                    $status_message = $alert('danger', 'exclamation-circle', 'Could not save the role.');
                 }
             }
         } elseif ($action == 'delete_staff' && $staff_id > 0) {
@@ -275,9 +319,6 @@ function getRoleTier($position)
 {
     $p = strtolower($position ?? '');
 
-    if (str_contains($p, 'head of department') || str_contains($p, 'hod')) {
-        return ['key' => 'hod', 'label' => 'Head of Department', 'icon' => 'fa-crown'];
-    }
     if (str_contains($p, 'senior')) {
         return ['key' => 'senior', 'label' => 'Senior Lecturer', 'icon' => 'fa-star'];
     }
@@ -745,7 +786,7 @@ function getRoleTier($position)
         <?php else: ?>
             <div class="staff-grid">
                 <?php foreach ($staff_members as $staff): ?>
-                    <?php $tier = getRoleTier($staff['position']); ?>
+                    <?php $tier = !empty($staff['is_hod']) ? ['key' => 'hod', 'label' => 'Head of Department', 'icon' => 'fa-crown'] : getRoleTier($staff['position']); ?>
                     <div class="staff-card tier-<?php echo $tier['key']; ?>">
                         <div class="staff-card-head">
                             <div class="staff-avatar">
@@ -787,6 +828,21 @@ function getRoleTier($position)
                         </div>
 
                         <div class="staff-actions">
+                            <form method="POST" class="role-form" style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px;">
+                                <input type="hidden" name="action" value="set_staff_role">
+                                <input type="hidden" name="staff_id" value="<?php echo $staff['id']; ?>">
+                                <select name="staff_type" style="padding: 3px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;">
+                                    <option value="academic" <?php echo ($staff['staff_type'] ?? 'academic') === 'academic' ? 'selected' : ''; ?>>Academic</option>
+                                    <option value="non_academic" <?php echo ($staff['staff_type'] ?? '') === 'non_academic' ? 'selected' : ''; ?>>Non-academic</option>
+                                </select>
+                                <label style="font-size: 13px; margin: 0; white-space: nowrap;">
+                                    <input type="checkbox" name="is_hod" value="1" <?php echo !empty($staff['is_hod']) ? 'checked' : ''; ?>> Head of Department
+                                </label>
+                                <button type="submit" class="btn-action" style="padding: 3px 10px;">Save role</button>
+                            </form>
+                            <?php if (($staff['staff_type'] ?? 'academic') === 'non_academic'): ?>
+                                <p style="font-size: 12px; color: #6c757d; margin: 0 0 8px;"><i class="fas fa-circle-info"></i> Non-academic: leave goes to HR only</p>
+                            <?php endif; ?>
                             <form method="POST" style="display: inline;">
                                 <input type="hidden" name="action" value="delete_staff">
                                 <input type="hidden" name="staff_id" value="<?php echo $staff['id']; ?>">
@@ -881,6 +937,20 @@ function getRoleTier($position)
                                     <input type="text" class="form-control" name="department">
                                 </div>
                                 <div class="col-md-6 mb-3">
+                                    <label class="form-label">Staff Type</label>
+                                    <select class="form-select" name="staff_type">
+                                        <option value="academic">Academic (lectures)</option>
+                                        <option value="non_academic">Non-academic (leave needs HR approval only)</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6 mb-3 d-flex align-items-end">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="is_hod" value="1" id="add_is_hod">
+                                        <label class="form-check-label" for="add_is_hod">Assign as Head of Department</label>
+                                        <div class="text-muted" style="font-size: 12px;">Academic staff only, and needs a department.</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6 mb-3">
                                     <label class="form-label">Campus Location</label>
                                     <select class="form-select" name="campus_location" required>
                                         <option value="">Select Campus</option>
@@ -927,6 +997,27 @@ function getRoleTier($position)
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
     <script>
+        // Non-academic staff can never be Head of Department: untick and lock the box.
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('form').forEach(function(form) {
+                const type = form.querySelector('[name="staff_type"]');
+                const hod = form.querySelector('[name="is_hod"]');
+                if (!type || !hod) {
+                    return;
+                }
+                const sync = function() {
+                    if (type.value === 'non_academic') {
+                        hod.checked = false;
+                        hod.disabled = true;
+                    } else {
+                        hod.disabled = false;
+                    }
+                };
+                type.addEventListener('change', sync);
+                sync();
+            });
+        });
+
         // Contract end date = same day, 2 years after the start date (6 Oct 2026 -> 6 Oct 2028).
         function twoYearsAfter(iso) {
             const [y, m, d] = iso.split('-').map(Number);

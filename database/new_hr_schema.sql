@@ -45,6 +45,10 @@
 --  10. staff.attendance_id added - attendance uploads are matched to staff by
 --      this ID number (the biometric Enroll ID) instead of by name. Against an
 --      existing database, run database/migration_staff_attendance_id.sql.
+--  11. staff.staff_type / staff.is_hod / leave_requests.hod_skipped added - HR
+--      assigns the Head of Department role (academic staff only), and
+--      non-academic staff skip the HOD step. Against an existing database, run
+--      database/migration_hod_assignment.sql.
 --
 -- This file contains structure and safe seed data only. No staff records,
 -- contract history, or session tokens from the source database.
@@ -484,6 +488,7 @@ CREATE TABLE `leave_requests` (
   `substitute_status` enum('pending','accepted','rejected') DEFAULT NULL,
   `days_used` int(11) DEFAULT 0,
   `hod_remarks` text DEFAULT NULL,
+  `hod_skipped` tinyint(1) NOT NULL DEFAULT 0,
   `hr_remarks` text DEFAULT NULL,
   `approved_by` int(11) DEFAULT NULL,
   `approved_at` datetime DEFAULT NULL,
@@ -776,6 +781,8 @@ CREATE TABLE `staff` (
   `password` varchar(255) DEFAULT NULL,
   `position` varchar(100) NOT NULL,
   `department` varchar(100) DEFAULT NULL,
+  `staff_type` enum('academic','non_academic') NOT NULL DEFAULT 'academic',
+  `is_hod` tinyint(1) NOT NULL DEFAULT 0,
   `campus_location` varchar(100) DEFAULT NULL,
   `gender` enum('male','female','other') DEFAULT NULL,
   `hire_date` date DEFAULT NULL,
