@@ -6,8 +6,15 @@ This folder contains the DOCX contract templates used for generating employment 
 
 ## Available Templates
 
-1. **Gombe_Template.docx** - Contract template for Gombe location
-2. **Abuja_Template.docx** - Contract template for Abuja location
+One appointment letter per campus. The **campus chosen on the Issue Contract form decides the letter** (it also has that campus's letterhead and Location line):
+
+| Campus on the form                  | Template file          |
+| ----------------------------------- | ---------------------- |
+| Lincoln University, Kumo Campus     | `Gombe_Template.docx`  |
+| Lincoln College, Abuja Campus       | `Abuja_Template.docx`  |
+| Lincoln University, NSUK Campus     | `Keffi_Template.docx`  |
+
+The Duties section and the other fixed clauses in each letter are part of the template - edit the .docx in Word to change them.
 
 ## Template Placeholders
 
@@ -29,6 +36,7 @@ These are the placeholders both templates now use. Type them exactly, in one pie
 | `${end_date}`       | Contract end date                            | 6th October, 2028                     |
 | `${duration}`       | Contract length, worked out from the dates   | Two (2) Year(s)                       |
 | `${salary}`         | Salary as entered (a plain number becomes N150,000 monthly) | ₦150,000 monthly |
+| `${net_salary}`     | Net salary after tax (optional - the whole line is left out if empty) | ₦94,460 |
 | `${email}`          | Staff email address                          | name@example.com                      |
 
 ### How to Use Placeholders

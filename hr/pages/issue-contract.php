@@ -25,14 +25,15 @@ $success_message = '';
 $error_message = '';
 $generated_contract_url = '';
 
-// Available contract templates
-$templates = [
-    'gombe' => 'Gombe_Template.docx',
-    'abuja' => 'Abuja_Template.docx'
+// One appointment letter per campus: the campus chosen decides which letter is used, so the
+// letterhead and the Location line always match the campus.
+$campus_templates = [
+    'Lincoln University, Kumo Campus' => ['key' => 'gombe', 'file' => 'Gombe_Template.docx'],
+    'Lincoln College, Abuja Campus'   => ['key' => 'abuja', 'file' => 'Abuja_Template.docx'],
+    'Lincoln University, NSUK Campus' => ['key' => 'keffi', 'file' => 'Keffi_Template.docx'],
 ];
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $template_type = trim($_POST['template_type'] ?? '');
     $staff_name = trim($_POST['staff_name'] ?? '');
     $address = trim($_POST['address'] ?? '');
     $date_issued = trim($_POST['date_issued'] ?? '');
@@ -41,6 +42,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $staff_email = trim($_POST['staff_email'] ?? '');
     $department = trim($_POST['department'] ?? '');
     $campus = trim($_POST['campus'] ?? '');
+    $template_type = $campus_templates[$campus]['key'] ?? '';
+    $net_salary_input = trim($_POST['net_salary'] ?? '');
     $salary = trim($_POST['salary'] ?? '');
     $position = trim($_POST['position'] ?? '');
     if (preg_match('/^[\d,]+(\.\d+)?$/', $salary)) {
@@ -52,8 +55,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
     if ($template_type && $staff_name && $address && $date_issued && $contract_start && $contract_end && $staff_email && $department && $campus && $salary && $position) {
         try {
-            if (!isset($templates[$template_type])) {
-                throw new Exception('Invalid template selected.');
+            if (!isset($campus_templates[$campus])) {
+                throw new Exception('There is no appointment letter for this campus.');
             }
 
             if (!class_exists('ZipArchive')) {
@@ -61,7 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
 
             // Load the selected template
-            $template_path = '../../contract-templates/' . $templates[$template_type];
+            $template_path = '../../contract-templates/' . $campus_templates[$campus]['file'];
 
             if (!file_exists($template_path)) {
                 throw new Exception('Template file not found');
@@ -80,17 +83,27 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $duration = "$contract_months Month(s)";
             }
 
+            // Net salary after tax is optional; with none given, that line is taken out of the letter.
+            if ($net_salary_input === '') {
+                $net_salary_display = '@@NONET@@';
+            } elseif (preg_match('/^[\d,]+(\.\d+)?$/', $net_salary_input)) {
+                $net_salary_display = '₦' . number_format((float) str_replace(',', '', $net_salary_input));
+            } else {
+                $net_salary_display = preg_match('/^(₦|N)/iu', $net_salary_input) ? $net_salary_input : '₦' . $net_salary_input;
+            }
+
             $templateProcessor->setValues([
                 'name'       => $staff_name,
                 'name_caps'  => strtoupper($staff_name),
                 'address'    => $address,
-                'date'       => date('l, F j, Y', strtotime($date_issued)),
+                'date'       => date('l, F jS, Y', strtotime($date_issued)),
                 'position'   => $position,
                 'department' => $department,
                 'start_date' => date('jS F, Y', strtotime($contract_start)),
                 'end_date'   => date('jS F, Y', strtotime($contract_end)),
                 'duration'   => $duration,
                 'salary'     => $salary_display,
+                'net_salary' => $net_salary_display,
                 'email'      => $staff_email,
             ]);
 
@@ -99,6 +112,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $output_path = '../../uploads/contracts/' . $output_filename;
 
             $templateProcessor->saveAs($output_path);
+
+            // No net salary given: drop the whole "Net Salary" line from the letter.
+            if ($net_salary_display === '@@NONET@@') {
+                $docx = new ZipArchive();
+                if ($docx->open($output_path) === true) {
+                    $docXml = $docx->getFromName('word/document.xml');
+                    $docXml = preg_replace_callback('#<w:p\b[^>]*>.*?</w:p>#s', fn($m) => strpos($m[0], '@@NONET@@') !== false ? '' : $m[0], $docXml);
+                    $docx->addFromString('word/document.xml', $docXml);
+                    $docx->close();
+                }
+            }
 
             // Save contract history to database
             $user_id = $user['id'] ?? null;
@@ -285,16 +309,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         <?php endif; ?>
         <form method="POST" class="contract-form" style="max-width: 1200px; background: #fff; border-radius: 12px; padding: 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
             <div class="mb-3">
-                <label for="template_type" class="form-label">Contract Template <span class="text-danger">*</span></label>
-                <select class="form-select" id="template_type" name="template_type" required>
-                    <option value="">-- Select Template --</option>
-                    <option value="gombe">Lincoln University, Kumo Campus Template</option>
-                    <option value="abuja">Lincoln College, Abuja Campus Template</option>
-                </select>
-                <small class="text-muted">Select the location-specific contract template</small>
-            </div>
-
-            <div class="mb-3">
                 <label for="staff_name" class="form-label">Staff Name <span class="text-danger">*</span></label>
                 <input type="text" class="form-control" id="staff_name" name="staff_name" placeholder="e.g., John Doe" required>
             </div>
@@ -325,10 +339,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <option value="">-- Select Campus --</option>
                     <option value="Lincoln University, Kumo Campus">Lincoln University, Kumo Campus</option>
                     <option value="Lincoln College, Abuja Campus">Lincoln College, Abuja Campus</option>
-                    <option value="Lincoln University, NSUK Campus">Lincoln University, NSUK Campus</option>
-                    <option value="Main">Main</option>
-                    <option value="Satellite">Satellite</option>
+                    <option value="Lincoln University, NSUK Campus">Lincoln University, NSUK Campus (Keffi)</option>
                 </select>
+                <small class="text-muted">The campus decides which appointment letter is used (Kumo = Gombe letter, Abuja = Abuja letter, NSUK = Keffi letter).</small>
             </div>
 
             <div class="mb-3">
@@ -337,6 +350,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <span class="input-group-text">₦</span>
                     <input type="text" class="form-control" id="salary" name="salary" placeholder="e.g., 500,000 per month" required>
                 </div>
+            </div>
+
+            <div class="mb-3">
+                <label for="net_salary" class="form-label">Net Salary After Tax <span class="text-muted">(optional)</span></label>
+                <div class="input-group">
+                    <span class="input-group-text">₦</span>
+                    <input type="text" class="form-control" id="net_salary" name="net_salary" placeholder="e.g., 94,460">
+                </div>
+                <small class="text-muted">Shown on the Abuja and Keffi letters. Leave empty to leave that line out.</small>
             </div>
 
             <div class="row">
