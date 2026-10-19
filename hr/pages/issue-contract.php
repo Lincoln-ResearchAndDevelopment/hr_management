@@ -4,6 +4,8 @@ session_start();
 include '../../config.php';
 include '../classes/HRAuth.php';
 include '../../classes/HRManager.php';
+include '../../classes/Mailer.php';
+include '../../classes/ContractNotifier.php';
 
 // Load PHPWord for DOCX processing
 require_once '../../vendor/autoload.php';
@@ -33,6 +35,44 @@ $campus_templates = [
     'Lincoln University, NSUK Campus' => ['key' => 'keffi', 'file' => 'Keffi_Template.docx'],
 ];
 
+// Default duties for each kind of staff. They fill the Duties box on the form and HR can edit them.
+$default_duties = require '../../contract-templates/default-duties.php';
+
+/**
+ * Turns the Duties box (one duty per line) into a clean list: blank lines dropped and any
+ * "-", "*", bullet or "1." the person typed in front of a line removed, since the letter adds its own bullets.
+ */
+function parseDutyLines($text)
+{
+    $lines = [];
+    foreach (preg_split('/\R/u', (string) $text) as $line) {
+        $line = trim(preg_replace('/^\s*(?:[-*•▪●]|\d+[.)])\s*/u', '', $line));
+        if ($line !== '') {
+            $lines[] = $line;
+        }
+    }
+    return $lines;
+}
+
+/**
+ * Repeats the letter's model duty bullet (the paragraph holding @@DUTIES@@) once per duty, in the
+ * bullet style of that letter. With no duties the bullet is removed.
+ */
+function expandDutiesInDocx($docXml, array $duties)
+{
+    return preg_replace_callback(
+        '#<w:p(?:\s[^>]*)?>(?:(?!</w:p>).)*?@@DUTIES@@.*?</w:p>#s',
+        function ($m) use ($duties) {
+            $out = '';
+            foreach ($duties as $duty) {
+                $out .= str_replace('@@DUTIES@@', htmlspecialchars($duty, ENT_XML1 | ENT_QUOTES, 'UTF-8'), $m[0]);
+            }
+            return $out;
+        },
+        $docXml
+    );
+}
+
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $staff_name = trim($_POST['staff_name'] ?? '');
     $address = trim($_POST['address'] ?? '');
@@ -46,6 +86,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $net_salary_input = trim($_POST['net_salary'] ?? '');
     $salary = trim($_POST['salary'] ?? '');
     $position = trim($_POST['position'] ?? '');
+    $staff_type = $_POST['staff_type'] ?? '';
+    $duty_lines = parseDutyLines($_POST['duties'] ?? '');
     if (preg_match('/^[\d,]+(\.\d+)?$/', $salary)) {
         // A plain amount: show it as a money figure per month, e.g. "₦150,000 monthly"
         $salary_display = '₦' . number_format((float) str_replace(',', '', $salary)) . ' monthly';
@@ -53,7 +95,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $salary_display = preg_match('/^(₦|N)/iu', $salary) ? $salary : '₦' . $salary;
     }
 
-    if ($template_type && $staff_name && $address && $date_issued && $contract_start && $contract_end && $staff_email && $department && $campus && $salary && $position) {
+    if (!isset($default_duties[$staff_type])) {
+        $error_message = 'Please choose whether this is an academic or non-academic staff member.';
+    } elseif (empty($duty_lines)) {
+        $error_message = 'Please list at least one duty (one per line).';
+    } elseif ($template_type && $staff_name && $address && $date_issued && $contract_start && $contract_end && $staff_email && $department && $campus && $salary && $position) {
         try {
             if (!isset($campus_templates[$campus])) {
                 throw new Exception('There is no appointment letter for this campus.');
@@ -113,29 +159,35 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
             $templateProcessor->saveAs($output_path);
 
-            // No net salary given: drop the whole "Net Salary" line from the letter.
-            if ($net_salary_display === '@@NONET@@') {
-                $docx = new ZipArchive();
-                if ($docx->open($output_path) === true) {
-                    $docXml = $docx->getFromName('word/document.xml');
+            // Finish the letter's text: drop the "Net Salary" line when none was given, and write
+            // one bullet per duty in the Duties section.
+            $docx = new ZipArchive();
+            if ($docx->open($output_path) === true) {
+                $docXml = $docx->getFromName('word/document.xml');
+                if ($net_salary_display === '@@NONET@@') {
                     $docXml = preg_replace_callback('#<w:p\b[^>]*>.*?</w:p>#s', fn($m) => strpos($m[0], '@@NONET@@') !== false ? '' : $m[0], $docXml);
-                    $docx->addFromString('word/document.xml', $docXml);
-                    $docx->close();
                 }
+                $docXml = expandDutiesInDocx($docXml, $duty_lines);
+                $docx->addFromString('word/document.xml', $docXml);
+                $docx->close();
             }
 
-            // Save contract history to database
+            // Save contract history to database. It is linked to the staff member (if they have
+            // an active staff record) so they get a notice on their dashboard.
+            ContractNotifier::ensureSchema($conn);
+            $contract_staff_id = ContractNotifier::findStaffId($conn, $staff_email);
             $user_id = $user['id'] ?? null;
-            $insert_sql = "INSERT INTO contract_history 
-                          (staff_name, staff_email, position, department, campus, salary, address, date_issued, contract_start, contract_end, template_type, contract_file, issued_by) 
-                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            $insert_sql = "INSERT INTO contract_history
+                          (staff_name, staff_email, staff_id, position, department, campus, salary, address, date_issued, contract_start, contract_end, template_type, contract_file, issued_by)
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
             $stmt = $conn->prepare($insert_sql);
             if ($stmt) {
                 $stmt->bind_param(
-                    'ssssssssssssi',
+                    'ssissssssssssi',
                     $staff_name,
                     $staff_email,
+                    $contract_staff_id,
                     $position,
                     $department,
                     $campus,
@@ -170,10 +222,33 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $sync_stmt->close();
             }
 
+            // Tell the staff member: email with the letter attached, plus a notice on their
+            // dashboard (shown until they download it).
+            $email_sent = false;
+            try {
+                $email_sent = (new Mailer())->sendContractIssued(
+                    Mailer::officialEmail($conn, $staff_email),
+                    $staff_name,
+                    $position,
+                    $department,
+                    $contract_start,
+                    $contract_end,
+                    realpath($output_path) ?: $output_path
+                );
+            } catch (Throwable $mail_error) {
+                error_log('Contract email error: ' . $mail_error->getMessage());
+            }
+
             $success_message = 'Contract issued and saved successfully as: ' . $output_filename;
             $success_message .= $staff_synced
                 ? ' Contract dates were also updated on the matching staff record.'
                 : ' No matching active staff record found by email, so contract dates were not linked to a staff profile.';
+            $success_message .= $email_sent
+                ? ' The staff member has been emailed the contract'
+                : ' The email to the staff member could not be sent';
+            $success_message .= $contract_staff_id
+                ? ($email_sent ? ' and will see a notice on their dashboard until they download it.' : ', but they will still see a notice on their dashboard until they download it.')
+                : ($email_sent ? '. They have no active staff account yet, so there is no dashboard notice.' : ', and they have no active staff account yet, so there is no dashboard notice either.');
             $generated_contract_url = '../../uploads/contracts/' . rawurlencode($output_filename);
         } catch (Throwable $e) {
             $error_message = 'Error generating contract: ' . $e->getMessage();
@@ -378,6 +453,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 <small class="text-muted">Filled in automatically as 2 years after the start date. You can still change it.</small>
             </div>
 
+            <div class="mb-3">
+                <label for="staff_type" class="form-label">Staff Type <span class="text-danger">*</span></label>
+                <select class="form-select" id="staff_type" name="staff_type" required>
+                    <option value="">-- Select Academic or Non-academic --</option>
+                    <option value="academic" <?= ($_POST['staff_type'] ?? '') === 'academic' ? 'selected' : '' ?>>Academic staff</option>
+                    <option value="non_academic" <?= ($_POST['staff_type'] ?? '') === 'non_academic' ? 'selected' : '' ?>>Non-academic staff</option>
+                </select>
+                <small class="text-muted">Choosing a type fills the Duties box below with that type's standard duties.</small>
+            </div>
+
+            <div class="mb-3">
+                <label for="duties" class="form-label">Duties <span class="text-danger">*</span></label>
+                <textarea class="form-control" id="duties" name="duties" rows="9" required placeholder="Choose the staff type above to load the standard duties."><?= htmlspecialchars($_POST['duties'] ?? '') ?></textarea>
+                <small class="text-muted">One duty per line. Each line becomes one bullet in the letter. You can edit, add or remove lines for this person before generating the contract.</small>
+            </div>
+
             <div class="d-grid">
                 <button type="submit" class="btn btn-primary btn-lg">
                     <i class="fas fa-file-contract me-2"></i>Generate Contract
@@ -413,12 +504,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                             <th>Date Issued</th>
                             <th>Start Date</th>
                             <th>End Date</th>
+                            <th class="text-center">Staff Download</th>
                             <th class="text-center">Download</th>
                         </tr>
                     </thead>
                     <tbody id="historyTableBody">
                         <tr>
-                            <td colspan="8" class="text-muted text-center">No contracts issued yet</td>
+                            <td colspan="9" class="text-muted text-center">No contracts issued yet</td>
                         </tr>
                     </tbody>
                 </table>
@@ -436,7 +528,29 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
             return t.toISOString().slice(0, 10);
         }
+        // Standard duties for each staff type (from contract-templates/default-duties.php)
+        const defaultDuties = <?= json_encode(array_map(fn($list) => implode("\n", $list), $default_duties), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+
         document.addEventListener('DOMContentLoaded', function() {
+            const typeSelect = document.getElementById('staff_type');
+            const dutiesBox = document.getElementById('duties');
+            if (typeSelect && dutiesBox) {
+                // The text last filled in by us, so we know whether HR has edited it since
+                let lastDefault = Object.values(defaultDuties).includes(dutiesBox.value) ? dutiesBox.value : '';
+                let lastType = typeSelect.value;
+                typeSelect.addEventListener('change', function() {
+                    const next = defaultDuties[typeSelect.value] || '';
+                    const edited = dutiesBox.value.trim() !== '' && dutiesBox.value !== lastDefault;
+                    if (edited && !confirm('Replace the duties you have typed with the standard duties for this staff type?')) {
+                        typeSelect.value = lastType;
+                        return;
+                    }
+                    dutiesBox.value = next;
+                    lastDefault = next;
+                    lastType = typeSelect.value;
+                });
+            }
+
             const startInput = document.getElementById('contract_start');
             const endInput = document.getElementById('contract_end');
             if (startInput && endInput) {
@@ -512,13 +626,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             const historyTableBody = document.getElementById('historyTableBody');
 
             if (!contracts || contracts.length === 0) {
-                historyTableBody.innerHTML = '<tr><td colspan="8" class="text-muted text-center">No contracts found</td></tr>';
+                historyTableBody.innerHTML = '<tr><td colspan="9" class="text-muted text-center">No contracts found</td></tr>';
                 return;
             }
 
             historyTableBody.innerHTML = '';
             contracts.forEach(contract => {
                 const row = document.createElement('tr');
+                let staffStatus = '<span class="badge bg-secondary" title="No active staff account matches this email">No account</span>';
+                if (contract.staff_id) {
+                    staffStatus = contract.staff_downloaded_at
+                        ? `<span class="badge bg-success" title="${contract.staff_downloaded_at}">Downloaded</span>`
+                        : '<span class="badge bg-warning text-dark">Not yet</span>';
+                }
                 const downloadCell = contract.contract_file
                     ? `<a href="../../uploads/contracts/${encodeURIComponent(contract.contract_file)}" class="btn btn-icon btn-outline-secondary" title="Download Contract" download>
                             <i class="fas fa-download"></i>
@@ -532,6 +652,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <td>${new Date(contract.date_issued).toLocaleDateString()}</td>
                     <td>${new Date(contract.contract_start).toLocaleDateString()}</td>
                     <td>${new Date(contract.contract_end).toLocaleDateString()}</td>
+                    <td class="text-center">${staffStatus}</td>
                     <td class="text-center">${downloadCell}</td>
                 `;
                 historyTableBody.appendChild(row);

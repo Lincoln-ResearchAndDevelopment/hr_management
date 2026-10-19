@@ -14,7 +14,15 @@ One appointment letter per campus. The **campus chosen on the Issue Contract for
 | Lincoln College, Abuja Campus       | `Abuja_Template.docx`  |
 | Lincoln University, NSUK Campus     | `Keffi_Template.docx`  |
 
-The Duties section and the other fixed clauses in each letter are part of the template - edit the .docx in Word to change them.
+The other fixed clauses in each letter are part of the template - edit the .docx in Word to change them.
+
+### Duties (editable per contract)
+
+The Duties list is **not** fixed text. In each letter it is a single bullet containing the marker `@@DUTIES@@`; when a contract is generated that bullet is repeated once per duty, in the letter's own bullet style. Do not delete the `@@DUTIES@@` bullet or type anything else in it.
+
+On the Issue Contract form HR picks **Academic** or **Non-academic** staff, which fills the Duties box with that type's standard duties. HR can then edit, add or remove lines for that person before generating the letter.
+
+The standard duties live in `default-duties.php` in this folder (one line = one duty). Edit that file to change what the two defaults say.
 
 ## Template Placeholders
 

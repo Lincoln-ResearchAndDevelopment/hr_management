@@ -3,6 +3,7 @@
 session_start();
 include '../../config.php';
 include '../classes/HRAuth.php';
+include '../../classes/ContractNotifier.php';
 
 $hr_auth = new HRAuth($conn);
 
@@ -16,7 +17,9 @@ $contracts = [];
 
 try {
     // Try to fetch from contract history table
-    $sql = "SELECT staff_name, position, department, campus, date_issued, contract_start, contract_end, contract_file
+    ContractNotifier::ensureSchema($conn);
+    $sql = "SELECT staff_name, position, department, campus, date_issued, contract_start, contract_end, contract_file,
+                   staff_id, staff_downloaded_at
             FROM contract_history
             ORDER BY date_issued DESC
             LIMIT 50";
