@@ -82,6 +82,12 @@ $user_info = $user ?? null;
             </a>
         </li>
         <li>
+            <a href="deductions-report.php" class="<?php echo $current_page === 'deductions-report.php' ? 'active' : ''; ?>">
+                <i class="fas fa-file-invoice-dollar"></i>
+                <span>Deductions Report</span>
+            </a>
+        </li>
+        <li>
             <a href="manage-appraisal.php" class="<?php echo $current_page === 'manage-appraisal.php' ? 'active' : ''; ?>">
                 <i class="fas fa-star"></i>
                 <span>Manage Appraisal</span>

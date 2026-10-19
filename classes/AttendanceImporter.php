@@ -581,6 +581,7 @@ class AttendanceImporter
         $errors = [];
         $late_arrivals = [];
         $absences = [];
+        $affected = []; // staff_id => ['2026-10' => true, ...] - who this file recorded attendance for, and which months
 
         // Sign-out is only judged when the file actually carries sign-out
         // data. A file with no check-out column at all (it's optional) says
@@ -682,6 +683,7 @@ class AttendanceImporter
 
             if ($result['success']) {
                 $processed++;
+                $affected[(int) $staff['id']][substr($attendance_date, 0, 7)] = true;
 
                 // A day costs what its status costs (present 0, late, absent), and
                 // payroll is only ever adjusted by the DIFFERENCE from what the day
@@ -710,7 +712,8 @@ class AttendanceImporter
             'skipped' => $skipped,
             'errors' => $errors,
             'late_arrivals' => $late_arrivals,
-            'absences' => $absences
+            'absences' => $absences,
+            'affected' => $affected
         ];
     }
 

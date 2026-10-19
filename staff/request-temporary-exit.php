@@ -83,6 +83,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($insert_query->execute()) {
             $message = 'Your request has been submitted successfully and is pending approval. Please await a response from the HR before taking any action.';
             $message_type = 'success';
+
+            // Tell the colleague named as substitute that they have been appointed.
+            if (!empty($substitute_staff_id)) {
+                require_once '../classes/SubstituteNotifier.php';
+                SubstituteNotifier::notifyAppointed(
+                    $conn,
+                    $substitute_staff_id,
+                    $staff_id,
+                    'temporary_exit',
+                    $request_date,
+                    $request_date,
+                    date('g:i A', strtotime($start_time)) . ' - ' . date('g:i A', strtotime($end_time))
+                );
+            }
             $_POST = [];
         } else {
             $message = 'Error submitting request. Please try again.';

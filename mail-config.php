@@ -18,7 +18,10 @@ $mail_local_secrets = is_file(__DIR__ . '/mail-config.local.php') ? require __DI
 define('MAIL_PASSWORD', getenv('MAIL_PASSWORD') ?: ($mail_local_secrets['password'] ?? ''));  // SMTP password
 // From email should match the authenticated mailbox when using Gmail SMTP
 define('MAIL_FROM_EMAIL', getenv('MAIL_FROM_EMAIL') ?: MAIL_USERNAME);
-define('MAIL_FROM_NAME', 'Lincoln HR System');
+// Emails are shown as coming from "No Reply"; replies are directed to the HR mailbox below, which is
+// also the contact address printed at the end of every email.
+define('MAIL_FROM_NAME', 'No Reply');
+define('MAIL_REPLY_TO', 'umarsabdul5@gmail.com');
 define('MAIL_ENCRYPTION', 'tls');               // Use 'tls' or 'ssl'
 
 // Email Settings

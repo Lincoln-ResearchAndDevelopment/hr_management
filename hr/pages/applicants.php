@@ -92,19 +92,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['hire_applicant'])) {
         );
 
         if ($insert_staff->execute()) {
-            // 3. Send credentials to the official Lincoln email only, not their personal one
+            // 3. Send the login details to the Lincoln email AND the personal email they applied with:
+            // a new hire may not be able to open the Lincoln mailbox yet.
             $mailer = new Mailer();
             $email_sent = $mailer->sendStaffEmploymentCredentials(
-                $lincoln_email,  // Official Lincoln email only
+                $lincoln_email,
                 $applicant['first_name'],
                 $applicant['last_name'],
                 $lincoln_email,
                 $default_password,
                 $position,
-                $department
+                $department,
+                $applicant['email']
             );
 
-            $email_status = $email_sent ? 'Credentials sent to their Lincoln email' : 'Note: Email sending may have failed';
+            $email_status = $email_sent
+                ? 'Credentials sent to their Lincoln email (' . htmlspecialchars($lincoln_email) . ') and their personal email (' . htmlspecialchars($applicant['email']) . ')'
+                : 'Note: Email sending may have failed';
 
             $status_message = '<div class="alert alert-success alert-dismissible fade show" role="alert">
                 <i class="fas fa-check-circle"></i> Applicant hired successfully!<br>

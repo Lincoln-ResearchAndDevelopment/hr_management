@@ -117,8 +117,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($leave_type_id)) {
         $message = 'Error: Please select a leave type.';
         $message_type = 'danger';
-    } elseif ($start_date >= $end_date) {
-        $message = 'Error: End date must be after start date.';
+    } elseif ($start_date > $end_date) {
+        // The same start and end date is a one-day leave, which is allowed.
+        $message = 'Error: End date cannot be before the start date.';
+        $message_type = 'danger';
+    } elseif ($total_days < 1) {
+        $message = 'Error: The dates you picked have no working days (weekends and public holidays are not counted).';
         $message_type = 'danger';
     } else {
         // Check if staff can request this leave
@@ -162,6 +166,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $message = 'Your request has been submitted successfully and is pending approval. Please await a response from the HR before taking any action.';
                 $message_type = 'success';
                 $_POST = [];
+
+                if (!empty($substitute_staff_id)) {
+                    require_once '../classes/SubstituteNotifier.php';
+                    SubstituteNotifier::notifyAppointed($conn, $substitute_staff_id, $staff_id, 'leave', $start_date, $end_date);
+                }
 
                 // Refresh leave types to get updated balances
                 $leave_types = $leaveManager->getAvailableLeaveTypesForStaff($staff_id);

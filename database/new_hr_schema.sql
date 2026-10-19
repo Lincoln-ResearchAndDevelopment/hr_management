@@ -49,6 +49,9 @@
 --      assigns the Head of Department role (academic staff only), and
 --      non-academic staff skip the HOD step. Against an existing database, run
 --      database/migration_hod_assignment.sql.
+--  12. contract_history.staff_id / staff_downloaded_at added - staff are emailed
+--      their contract and see a dashboard notice until they download it. Against
+--      an existing database, run database/migration_contract_notifications.sql.
 --
 -- This file contains structure and safe seed data only. No staff records,
 -- contract history, or session tokens from the source database.
@@ -176,6 +179,7 @@ CREATE TABLE `contract_history` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `staff_name` varchar(255) NOT NULL,
   `staff_email` varchar(255) DEFAULT NULL,
+  `staff_id` int(11) DEFAULT NULL,
   `position` varchar(255) NOT NULL,
   `department` varchar(255) NOT NULL,
   `campus` varchar(100) DEFAULT NULL,
@@ -186,9 +190,11 @@ CREATE TABLE `contract_history` (
   `contract_end` date NOT NULL,
   `template_type` varchar(50) DEFAULT NULL,
   `contract_file` varchar(255) DEFAULT NULL,
+  `staff_downloaded_at` datetime DEFAULT NULL,
   `issued_by` int(11) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
+  KEY `idx_contract_staff_id` (`staff_id`),
   KEY `idx_staff_name` (`staff_name`),
   KEY `idx_date_issued` (`date_issued`),
   KEY `idx_campus` (`campus`),
@@ -1264,7 +1270,7 @@ INSERT INTO `leave_types`
   (name, description, days_allocated, allocation_unit, min_days, max_days,
    is_paid, requires_approval, is_unlimited, is_one_time, gender_specific, is_active)
 VALUES
-('Annual Leave', 'Annual vacation leave', 14, 'days', 7, 14, 1, 1, 0, 0, 'none', 1),
+('Annual Leave', 'Annual vacation leave', 14, 'days', 1, 7, 1, 1, 0, 0, 'none', 1),
 ('Maternity Leave', 'For female staff during pregnancy and childbirth', 28, 'days', 14, 28, 1, 1, 0, 0, 'female', 1),
 ('Paternity Leave', 'For male staff (birth day and dedication day)', 2, 'days', 1, 2, 1, 1, 0, 0, 'male', 1),
 ('Compassionate Leave', 'For disasters (death, fire, flood, etc.)', 2, 'days', 1, 2, 1, 1, 0, 0, 'none', 1),

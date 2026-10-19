@@ -133,8 +133,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (empty($_FILES['supporting_documents']['name'])) {
         $message = 'Error: Please upload supporting documents.';
         $message_type = 'danger';
-    } elseif ($start_date >= $end_date) {
-        $message = 'Error: End date must be after start date.';
+    } elseif ($start_date > $end_date) {
+        // The same start and end date is a one-day leave, which is allowed.
+        $message = 'Error: End date cannot be before the start date.';
+        $message_type = 'danger';
+    } elseif ($total_days < 1) {
+        $message = 'Error: The dates you picked have no working days (weekends and public holidays are not counted).';
         $message_type = 'danger';
     } else {
         // Check if staff can request this leave
@@ -253,6 +257,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     $message_type = 'success';
 
+                    // Tell the colleague named as substitute that they have been appointed.
+                    require_once '../classes/SubstituteNotifier.php';
+                    SubstituteNotifier::notifyAppointed($conn, $substitute_staff_id, $staff_id, 'leave', $start_date, $end_date);
+
                     // Notify the relevant reviewer(s) by email. Never let a
                     // mail failure block the staff-facing success response.
                     try {
@@ -265,29 +273,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $leave_type_name = $leave_type_row['name'] ?? 'Leave';
 
                         $mailer = new Mailer();
+                        $requester_name = trim($staff['first_name'] . ' ' . $staff['last_name']);
 
+                        // HR is told about EVERY leave request the moment it is made - one email to the
+                        // shared HR mailbox and all HR logins. When it goes straight to HR the email asks
+                        // for a decision; when a Head of Department reviews first it is for information.
                         if (empty($department_heads)) {
-                            $hr_recipients_query = $conn->query(
-                                "SELECT u.email, u.first_name, u.last_name FROM users u
-                                 JOIN user_roles ur ON ur.user_id = u.id WHERE ur.role = 'hr'"
-                            );
-                            if ($hr_recipients_query) {
-                                while ($hr_recipient = $hr_recipients_query->fetch_assoc()) {
-                                    $mailer->sendLeaveRequestNotification(
-                                        $hr_recipient['email'],
-                                        trim($hr_recipient['first_name'] . ' ' . $hr_recipient['last_name']),
-                                        trim($staff['first_name'] . ' ' . $staff['last_name']),
-                                        $staff['position'] ?? '',
-                                        $staff['department'] ?? '',
-                                        $leave_type_name,
-                                        $start_date,
-                                        $end_date,
-                                        $total_days,
-                                        $reason
-                                    );
-                                }
-                            }
+                            $hr_note = 'This request has come straight to HR (no Head of Department review is needed for it). Please review it in your dashboard.';
                         } else {
+                            $hod_names = implode(', ', array_map(fn($h) => trim($h['first_name'] . ' ' . $h['last_name']), $department_heads));
+                            $hr_note = "For your information: this request has gone to the Head of Department ({$hod_names}) first. You will be emailed again once they have decided, and HR then gives the final decision.";
+                        }
+                        $mailer->sendLeaveRequestNotification(
+                            Mailer::hrRecipients($conn),
+                            'HR Team',
+                            $requester_name,
+                            $staff['position'] ?? '',
+                            $staff['department'] ?? '',
+                            $leave_type_name,
+                            $start_date,
+                            $end_date,
+                            $total_days,
+                            $reason,
+                            false,
+                            $hr_note
+                        );
+
+                        if (!empty($department_heads)) {
                             foreach ($department_heads as $hod) {
                                 $hod_recipient = $hod['lincoln_email'] ?: $hod['email'];
                                 if (empty($hod_recipient)) {

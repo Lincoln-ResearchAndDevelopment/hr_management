@@ -163,10 +163,11 @@ class HRManager
             $applicant_data = $applicant_query->get_result()->fetch_assoc();
 
             if ($job_data && $applicant_data) {
+                // One email to the shared HR mailbox, every HR login, and the HR user who posted the job
                 $mailer = new Mailer();
                 $mailer->sendNewApplicantNotification(
-                    $job_data['hr_email'],
-                    $job_data['hr_first'] . ' ' . $job_data['hr_last'],
+                    Mailer::hrRecipients($this->conn, [$job_data['hr_email']]),
+                    'HR Team',
                     $applicant_data['first_name'] . ' ' . $applicant_data['last_name'],
                     $job_data['title'],
                     $job_data['company'],

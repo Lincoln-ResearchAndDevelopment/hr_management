@@ -66,8 +66,12 @@ class Mailer
 
         // From address
         $fromEmail = defined('MAIL_FROM_EMAIL') ? MAIL_FROM_EMAIL : (defined('MAIL_USERNAME') ? MAIL_USERNAME : 'no-reply@example.com');
-        $fromName  = defined('MAIL_FROM_NAME') ? MAIL_FROM_NAME : 'Lincoln HR System';
+        $fromName  = defined('MAIL_FROM_NAME') ? MAIL_FROM_NAME : 'No Reply';
         $this->mail->setFrom($fromEmail, $fromName);
+
+        // Anyone who does reply reaches HR, not the no-reply sender.
+        $replyTo = defined('MAIL_REPLY_TO') ? MAIL_REPLY_TO : 'umarsabdul5@gmail.com';
+        $this->mail->addReplyTo($replyTo, 'Lincoln HR');
     }
 
     /**
@@ -209,7 +213,7 @@ class Mailer
     ) {
         try {
             $this->mail->clearAllRecipients();
-            $this->mail->addAddress($hrEmail);
+            $this->addRecipients($hrEmail);
             $this->mail->isHTML(true);
             $this->mail->Subject = "New Application Received - {$jobTitle}";
 
@@ -250,15 +254,17 @@ class Mailer
         $endDate,
         $totalDays,
         $reason,
-        $forHod = false
+        $forHod = false,
+        $noteText = null
     ) {
         try {
             $this->mail->clearAllRecipients();
-            $this->mail->addAddress($hrEmail);
+            $this->addRecipients($hrEmail);
             $this->mail->isHTML(true);
             $this->mail->Subject = "New Leave Request - {$staffName}";
 
             $body = $this->getTemplate('leave-request-notification', [
+                'noteText'      => $noteText ?? 'Please review this request in your dashboard.',
                 'hrName'        => $hrName,
                 'staffName'     => $staffName,
                 'position'      => $position,
@@ -308,7 +314,7 @@ class Mailer
             $info = $labels[$hodDecision] ?? ['label' => ucfirst($hodDecision), 'color' => '#6c757d'];
 
             $this->mail->clearAllRecipients();
-            $this->mail->addAddress($hrEmail);
+            $this->addRecipients($hrEmail);
             $this->mail->isHTML(true);
             $this->mail->Subject = "HOD {$info['label']} Leave Request - {$staffName} (Awaiting Your Decision)";
 
@@ -471,11 +477,21 @@ class Mailer
         $lincolnEmail,
         $password,
         $position,
-        $department
+        $department,
+        $personalEmail = null
     ) {
         try {
+            // A new hire may not be able to open their Lincoln mailbox yet, so the login details go to
+            // both the Lincoln email and their personal email (the one they applied or were added with).
             $this->mail->clearAllRecipients();
-            $this->mail->addAddress($originalEmail);
+            $sent_to = [];
+            foreach ([$originalEmail, $personalEmail] as $address) {
+                $address = trim((string) $address);
+                if ($address !== '' && !in_array(strtolower($address), $sent_to, true)) {
+                    $this->mail->addAddress($address);
+                    $sent_to[] = strtolower($address);
+                }
+            }
             $this->mail->isHTML(true);
             $this->mail->Subject = 'Welcome to Lincoln University College - Your Staff Account Details';
 
@@ -495,6 +511,100 @@ class Mailer
             return $this->mail->send();
         } catch (Exception $e) {
             error_log("Staff employment credentials email error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Tell a staff member they have been named as the substitute on a colleague's leave or
+     * temporary exit request. $kind is 'leave' or 'temporary_exit'.
+     */
+    public function sendSubstituteAppointment(
+        $substituteEmail,
+        $substituteName,
+        $requesterName,
+        $kind,
+        $dateFrom,
+        $dateTo,
+        $timeText = ''
+    ) {
+        try {
+            $isExit = $kind === 'temporary_exit';
+            $requestLabel = $isExit ? 'temporary exit' : 'leave';
+
+            if ($isExit) {
+                $whenText = date('l, F j, Y', strtotime($dateFrom)) . ($timeText !== '' ? ', ' . $timeText : '');
+            } elseif ($dateFrom === $dateTo) {
+                $whenText = date('l, F j, Y', strtotime($dateFrom));
+            } else {
+                $whenText = date('F j, Y', strtotime($dateFrom)) . ' to ' . date('F j, Y', strtotime($dateTo));
+            }
+
+            $this->mail->clearAllRecipients();
+            $this->mail->clearAttachments();
+            $this->mail->addAddress($substituteEmail);
+            $this->mail->isHTML(true);
+            $this->mail->Subject = "You have been appointed as a substitute for {$requesterName}";
+
+            $body = $this->getTemplate('substitute-appointed', [
+                'substituteName' => $substituteName,
+                'requesterName'  => $requesterName,
+                'requestLabel'   => $requestLabel,
+                'whenText'       => $whenText,
+                'dashboardUrl'   => $this->getStaffLoginUrl(),
+            ]);
+
+            $this->mail->Body    = $body;
+            $this->mail->AltBody = strip_tags($body);
+
+            return $this->mail->send();
+        } catch (Exception $e) {
+            error_log("Substitute appointment email error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Tell a staff member their contract has been issued, with the appointment letter attached.
+     * $contractPath is the generated .docx on disk.
+     */
+    public function sendContractIssued(
+        $staffEmail,
+        $staffName,
+        $position,
+        $department,
+        $startDate,
+        $endDate,
+        $contractPath
+    ) {
+        try {
+            $this->mail->clearAllRecipients();
+            $this->mail->clearAttachments();
+            $this->mail->addAddress($staffEmail);
+            $this->mail->isHTML(true);
+            $this->mail->Subject = 'Your Contract Has Been Issued - Lincoln University College';
+
+            if (is_file($contractPath)) {
+                $this->mail->addAttachment($contractPath, 'Appointment Letter - ' . $staffName . '.docx');
+            }
+
+            $body = $this->getTemplate('contract-issued', [
+                'staffName'    => $staffName,
+                'position'     => $position,
+                'department'   => $department,
+                'startDate'    => date('F j, Y', strtotime($startDate)),
+                'endDate'      => date('F j, Y', strtotime($endDate)),
+                'dashboardUrl' => $this->getStaffLoginUrl(),
+            ]);
+
+            $this->mail->Body    = $body;
+            $this->mail->AltBody = strip_tags($body);
+
+            $sent = $this->mail->send();
+            $this->mail->clearAttachments();
+            return $sent;
+        } catch (Exception $e) {
+            error_log("Contract issued email error: " . $e->getMessage());
             return false;
         }
     }
@@ -526,14 +636,10 @@ class Mailer
             $this->mail->isHTML(true);
             $this->mail->Subject = "Contract Ending Reminder - {$staffName}";
 
-            $days = (int) round((strtotime($contractEndDate) - strtotime(date('Y-m-d'))) / 86400);
-            if ($days < 0) {
-                $statusText = 'terminated ' . abs($days) . ' day' . (abs($days) === 1 ? '' : 's') . ' ago - contract has already ended';
-            } elseif ($days === 0) {
-                $statusText = 'terminated today';
-            } else {
-                $statusText = 'terminated in ' . $days . ' day' . ($days === 1 ? '' : 's');
-            }
+            // e.g. "expires today (Wednesday, October 14, 2026)" / "expired 273 days ago (Wednesday, January 14, 2026)"
+            require_once __DIR__ . '/ContractExpiry.php';
+            $expiry = ContractExpiry::describe($contractEndDate);
+            $statusText = $expiry['text'] . ' (' . $expiry['dateText'] . ')';
 
             $body = $this->getTemplate('contract-ending-reminder-hr', [
                 'staffName' => $staffName,
@@ -572,6 +678,136 @@ class Mailer
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         return $row['lincoln_email'] ?? $email;
+    }
+
+    /** Keep the SMTP connection open between messages (used when sending many emails in a row). */
+    public function keepConnectionOpen()
+    {
+        $this->mail->SMTPKeepAlive = true;
+    }
+
+    public function closeConnection()
+    {
+        $this->mail->SMTPKeepAlive = false;
+        $this->mail->smtpClose();
+    }
+
+    /**
+     * Send a staff member their attendance breakdown for a month (from AttendanceSummary::forMonth):
+     * days on time, late arrivals and absences with what each cost, the total deducted, and every
+     * deducted day.
+     */
+    public function sendAttendanceSummary($staffEmail, $staffName, array $s)
+    {
+        try {
+            require_once __DIR__ . '/AttendanceImporter.php';
+            $money = fn($n) => '₦' . number_format((float) $n);
+
+            $this->mail->clearAllRecipients();
+            $this->mail->clearAttachments();
+            $this->addRecipients($staffEmail);
+            $this->mail->isHTML(true);
+            $this->mail->Subject = "Your Attendance for {$s['month_label']}" . ($s['total'] > 0 ? ' - Deductions Breakdown' : '');
+
+            $rows = '';
+            foreach ($s['deductions'] as $d) {
+                $rows .= '<tr>'
+                    . '<td style="padding:8px 10px;border-bottom:1px solid #e9ecef;white-space:nowrap;">' . htmlspecialchars(date('D, M j', strtotime($d['date']))) . '</td>'
+                    . '<td style="padding:8px 10px;border-bottom:1px solid #e9ecef;">' . htmlspecialchars($d['reason']) . '</td>'
+                    . '<td style="padding:8px 10px;border-bottom:1px solid #e9ecef;text-align:right;white-space:nowrap;">' . htmlspecialchars($money($d['amount'])) . '</td>'
+                    . '</tr>';
+            }
+            $detailsHtml = $s['total'] > 0
+                ? '<p style="margin-top:22px;"><strong>The days that were deducted:</strong></p>'
+                    . '<table style="width:100%;border-collapse:collapse;font-size:14px;">'
+                    . '<tr style="background:#f8f9fa;"><th style="padding:8px 10px;text-align:left;">Date</th><th style="padding:8px 10px;text-align:left;">What happened</th><th style="padding:8px 10px;text-align:right;">Amount</th></tr>'
+                    . $rows . '</table>'
+                : '<p style="margin-top:22px;"><strong>No deductions this month.</strong> Thank you for coming in on time.</p>';
+
+            $body = $this->getTemplate('attendance-summary', [
+                'staffName'    => $staffName,
+                'monthLabel'   => $s['month_label'],
+                'daysRecorded' => $s['days_recorded'],
+                'onTime'       => $s['on_time'],
+                'lateCount'    => $s['late_count'],
+                'lateRate'     => $money(AttendanceImporter::LATE_DEDUCTION),
+                'lateAmount'   => $money($s['late_amount']),
+                'absentCount'  => $s['absent_count'],
+                'absentRate'   => $money(AttendanceImporter::ABSENT_DEDUCTION),
+                'absentAmount' => $money($s['absent_amount']),
+                'totalAmount'  => $money($s['total']),
+                'attendanceUrl' => $this->getStaffAttendanceUrl(),
+            ]);
+            $body = str_replace('{{detailsHtml}}', $detailsHtml, $body);
+
+            $this->mail->Body    = $body;
+            $this->mail->AltBody = strip_tags($body);
+
+            return $this->mail->send();
+        } catch (Exception $e) {
+            error_log("Attendance summary email error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /** Link to the staff attendance page (same app-root detection as the other staff links). */
+    private function getStaffAttendanceUrl()
+    {
+        return preg_replace('#/login\.php$#', '/attendance.php', $this->getStaffLoginUrl());
+    }
+
+    /**
+     * The shared HR mailbox. Every "something happened that HR should know about" email goes here
+     * as well as to the individual HR logins, so it is seen even if nobody checks a personal inbox.
+     */
+    public static function hrInbox()
+    {
+        return defined('MAIL_REPLY_TO') ? MAIL_REPLY_TO : 'umarsabdul5@gmail.com';
+    }
+
+    /**
+     * Everyone in HR who should be told: the shared HR mailbox plus every HR login's email,
+     * without duplicates. Used so one message reaches all of them at once.
+     */
+    public static function hrRecipients($conn, array $extra = [])
+    {
+        $emails = array_merge([self::hrInbox()], $extra);
+        $result = $conn->query(
+            "SELECT u.email FROM users u JOIN user_roles ur ON ur.user_id = u.id
+             WHERE ur.role = 'hr' AND u.email IS NOT NULL AND u.email <> ''"
+        );
+        if ($result) {
+            while ($row = $result->fetch_assoc()) {
+                $emails[] = $row['email'];
+            }
+        }
+        $seen = [];
+        $out = [];
+        foreach ($emails as $email) {
+            $email = trim((string) $email);
+            if ($email !== '' && !isset($seen[strtolower($email)])) {
+                $seen[strtolower($email)] = true;
+                $out[] = $email;
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Adds one address, or several (an array, or "a@x.com, b@y.com"), as recipients of the current
+     * message, skipping blanks and duplicates.
+     */
+    private function addRecipients($to)
+    {
+        $list = is_array($to) ? $to : explode(',', (string) $to);
+        $seen = [];
+        foreach ($list as $address) {
+            $address = trim((string) $address);
+            if ($address !== '' && !isset($seen[strtolower($address)])) {
+                $seen[strtolower($address)] = true;
+                $this->mail->addAddress($address);
+            }
+        }
     }
 
     /**
@@ -678,9 +914,10 @@ class Mailer
                         
                         <p>Best regards,<br>
                         <strong>HR Department</strong><br>
-                        Lincoln University College</p>
+                        Lincoln University College<br>
+                        <a href='mailto:umarsabdul5@gmail.com'>umarsabdul5@gmail.com</a></p>
 
-                        <p style='margin-top: 20px; font-size: 12px; color: #999;'>This is an automated email, please do not reply directly.</p>
+                        <p style='margin-top: 20px; font-size: 12px; color: #999;'>This message was sent from a no-reply address. To contact HR, write to umarsabdul5@gmail.com.</p>
                     </div>
                 </div>
             </body>

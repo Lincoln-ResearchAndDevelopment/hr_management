@@ -8,6 +8,7 @@ session_start();
 include '../../config.php';
 include '../classes/HRAuth.php';
 include '../../classes/AttendanceImporter.php';
+include '../../classes/AttendanceSummary.php';
 
 $hr_auth = new HRAuth($conn);
 
@@ -79,11 +80,25 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['attendance_file'])) {
                 }
 
                 if ($upload_result['success'] && $upload_result['processed'] > 0) {
+                    // Email every staff member in the file their breakdown (late days, absences and what was
+                    // deducted for the month). HR can switch this off for a part-month upload.
+                    $email_note = '';
+                    if (!empty($_POST['email_staff'])) {
+                        $email_result = AttendanceSummary::emailAffectedStaff($conn, $upload_result['affected'] ?? []);
+                        $upload_result['emails'] = $email_result;
+                        $email_note = '<br><i class="fas fa-envelope"></i> Attendance breakdown emailed to ' . $email_result['sent'] . ' staff'
+                            . ($email_result['failed'] > 0 ? ' (' . $email_result['failed'] . ' could not be sent: ' . htmlspecialchars(implode(', ', array_unique($email_result['failed_names']))) . ')' : '')
+                            . ($email_result['no_email'] > 0 ? ' (' . $email_result['no_email'] . ' have no email address on file)' : '') . '.';
+                    } else {
+                        $email_note = '<br><i class="fas fa-envelope"></i> No emails were sent to staff (the option was switched off).';
+                    }
+
                     $message = '<div class="alert alert-success alert-dismissible fade show" role="alert">
-                        <i class="fas fa-check-circle"></i> 
+                        <i class="fas fa-check-circle"></i>
                         <strong>Success!</strong> Processed ' . $upload_result['processed'] . ' attendance records.
                         ' . (count($upload_result['late_arrivals']) > 0 ? count($upload_result['late_arrivals']) . ' late arrivals detected and deductions applied.' : '') . '
                         ' . (count($upload_result['absences']) > 0 ? count($upload_result['absences']) . ' absent day(s) detected (signed in but did not sign out).' : '') . '
+                        ' . $email_note . '
                         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>';
                 } elseif ($upload_result['processed'] == 0) {
@@ -314,6 +329,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['attendance_file'])) {
                                     <li>Signed in but did not sign out on a past day: marked absent (automatic -₦<?php echo AttendanceImporter::ABSENT_DEDUCTION; ?> deduction per day). Only applies when the file includes sign-out times; weekends and public holidays are never counted.</li>
                                     <li>Maximum file size: 5MB</li>
                                 </ul>
+                            </div>
+
+                            <div class="form-check mt-3">
+                                <input class="form-check-input" type="checkbox" name="email_staff" value="1" id="emailStaff" checked>
+                                <label class="form-check-label" for="emailStaff">
+                                    <strong>Email each staff member their attendance breakdown</strong>
+                                    <span class="text-muted d-block" style="font-size: 0.9em;">Everyone in this file gets an email for the month: days on time, number of times late and the amount deducted, number of absences and the amount deducted, and the total. Untick this if you are only uploading part of a month and want to email later.</span>
+                                </label>
                             </div>
 
                             <button type="submit" class="btn btn-danger mt-3" style="display: none;" id="submitBtn">

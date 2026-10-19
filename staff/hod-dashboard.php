@@ -51,31 +51,22 @@ function notifyHrOfHodDecision($conn, $leave_detail, $hod_name, $hod_decision, $
     try {
         require_once '../classes/Mailer.php';
 
-        $hr_recipients_query = $conn->query(
-            "SELECT u.email, u.first_name, u.last_name FROM users u
-             JOIN user_roles ur ON ur.user_id = u.id WHERE ur.role = 'hr'"
-        );
-        if (!$hr_recipients_query) {
-            return;
-        }
-
+        // One email to the shared HR mailbox and every HR login
         $mailer = new Mailer();
-        while ($hr_recipient = $hr_recipients_query->fetch_assoc()) {
-            $mailer->sendLeaveHodDecisionNotification(
-                $hr_recipient['email'],
-                trim($hr_recipient['first_name'] . ' ' . $hr_recipient['last_name']),
-                trim($leave_detail['first_name'] . ' ' . $leave_detail['last_name']),
-                $leave_detail['position'] ?? '',
-                $leave_detail['department'] ?? '',
-                $leave_detail['leave_type_name'],
-                $leave_detail['start_date'],
-                $leave_detail['end_date'],
-                $leave_detail['total_days'],
-                $hod_name,
-                $hod_decision,
-                $hod_remarks
-            );
-        }
+        $mailer->sendLeaveHodDecisionNotification(
+            Mailer::hrRecipients($conn),
+            'HR Team',
+            trim($leave_detail['first_name'] . ' ' . $leave_detail['last_name']),
+            $leave_detail['position'] ?? '',
+            $leave_detail['department'] ?? '',
+            $leave_detail['leave_type_name'],
+            $leave_detail['start_date'],
+            $leave_detail['end_date'],
+            $leave_detail['total_days'],
+            $hod_name,
+            $hod_decision,
+            $hod_remarks
+        );
     } catch (Throwable $e) {
         error_log('Failed to notify HR of HOD leave decision: ' . $e->getMessage());
     }

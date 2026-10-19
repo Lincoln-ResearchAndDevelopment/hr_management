@@ -4,6 +4,9 @@ session_start();
 include '../config.php';
 include 'classes/HRAuth.php';
 include '../classes/HRManager.php';
+include '../classes/AttendanceImporter.php';
+include '../classes/SubstituteNotifier.php';
+include '../classes/ContractExpiry.php';
 
 $hr_auth = new HRAuth($conn);
 $hr_manager = new HRManager($conn);
@@ -39,16 +42,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['renew_contract'])) {
 // Contracts ending within 30 days (or already past due and not yet
 // renewed) - HR should keep seeing this reminder every time they load the
 // dashboard until the contract is renewed (end date pushed out again).
-$contract_alerts_query = $conn->query(
-    "SELECT id, first_name, last_name, position, department, contract_end_date,
-            DATEDIFF(contract_end_date, CURDATE()) AS days_remaining
+// "Today" and the 30-day window come from ContractExpiry (Nigerian time) rather than the database
+// clock, so a contract is never reported a day early or late.
+$contract_today = ContractExpiry::today();
+$contract_window_end = $contract_today->modify('+30 days')->format('Y-m-d');
+$contract_alerts_query = $conn->prepare(
+    "SELECT id, first_name, last_name, position, department, contract_end_date
      FROM staff
      WHERE status = 'active'
        AND contract_end_date IS NOT NULL
-       AND contract_end_date <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)
+       AND contract_end_date <= ?
      ORDER BY contract_end_date ASC"
 );
-$contract_alerts = $contract_alerts_query ? $contract_alerts_query->fetch_all(MYSQLI_ASSOC) : [];
+$contract_alerts_query->bind_param('s', $contract_window_end);
+$contract_alerts_query->execute();
+$contract_alerts = $contract_alerts_query->get_result()->fetch_all(MYSQLI_ASSOC);
 
 // Get stats for dashboard
 $hr_jobs = $hr_manager->getHRJobs($user['id']);
@@ -69,6 +77,31 @@ $total_applicants = $applicants_result['total'] ?? 0;
 // Total handbooks uploaded
 $handbook_count_result = $conn->query("SELECT COUNT(*) as total FROM staff_handbook");
 $total_handbooks = $handbook_count_result ? ($handbook_count_result->fetch_assoc()['total'] ?? 0) : 0;
+
+// This month's attendance deductions (late / absent), with a link to the full report
+$deduction_summary = ['staff' => 0, 'late' => 0, 'absent' => 0, 'amount' => 0];
+$deduction_month_start = date('Y-m-01');
+$deduction_month_end = date('Y-m-t');
+$deduction_stmt = $conn->prepare(
+    "SELECT COUNT(DISTINCT staff_id) AS staff_count,
+            SUM(status = 'late') AS late_days,
+            SUM(status = 'absent') AS absent_days
+     FROM attendance_records
+     WHERE attendance_date BETWEEN ? AND ? AND status IN ('late', 'absent')"
+);
+if ($deduction_stmt) {
+    $deduction_stmt->bind_param('ss', $deduction_month_start, $deduction_month_end);
+    $deduction_stmt->execute();
+    $deduction_row = $deduction_stmt->get_result()->fetch_assoc();
+    $deduction_summary['staff'] = (int) ($deduction_row['staff_count'] ?? 0);
+    $deduction_summary['late'] = (int) ($deduction_row['late_days'] ?? 0);
+    $deduction_summary['absent'] = (int) ($deduction_row['absent_days'] ?? 0);
+    $deduction_summary['amount'] = $deduction_summary['late'] * AttendanceImporter::LATE_DEDUCTION
+        + $deduction_summary['absent'] * AttendanceImporter::ABSENT_DEDUCTION;
+}
+
+// Current and upcoming substitute appointments across all staff
+$substitute_list = SubstituteNotifier::allCurrent($conn);
 
 // Get upcoming interviews for this HR's jobs
 $upcoming_interviews_query = $conn->prepare(
@@ -508,6 +541,12 @@ $upcoming_interviews = $upcoming_interviews_query->get_result()->fetch_all(MYSQL
                 </a>
             </li>
             <li>
+                <a href="pages/deductions-report.php">
+                    <i class="fas fa-file-invoice-dollar"></i>
+                    <span>Deductions Report</span>
+                </a>
+            </li>
+            <li>
                 <a href="pages/manage-appraisal.php">
                     <i class="fas fa-star"></i>
                     <span>Manage Appraisal</span>
@@ -597,26 +636,20 @@ $upcoming_interviews = $upcoming_interviews_query->get_result()->fetch_all(MYSQL
             <div style="background: #fff; border: 1px solid #f5c2c7; border-left: 4px solid #C82333; border-radius: 12px; padding: 22px 26px; margin-bottom: 30px;">
                 <h3 style="margin: 0 0 16px; font-size: 1.1rem; font-weight: 700; color: #842029; display: flex; align-items: center; gap: 10px;">
                     <i class="fas fa-triangle-exclamation"></i> Contracts Ending Soon
+                    <small style="margin-left: auto; font-weight: 500; color: #6c757d;">Today is <?php echo $contract_today->format('l, F j, Y'); ?></small>
                 </h3>
                 <?php foreach ($contract_alerts as $alert): ?>
                     <?php
-                    $days = (int) $alert['days_remaining'];
                     $staff_name = htmlspecialchars($alert['first_name'] . ' ' . $alert['last_name']);
-                    $end_date_fmt = date('F d, Y', strtotime($alert['contract_end_date']));
-                    if ($days < 0) {
-                        $status_text = 'terminated ' . abs($days) . ' day' . (abs($days) === 1 ? '' : 's') . ' ago - contract has ended';
-                    } elseif ($days === 0) {
-                        $status_text = 'terminated today';
-                    } else {
-                        $status_text = 'terminated in ' . $days . ' day' . ($days === 1 ? '' : 's');
-                    }
+                    $expiry = ContractExpiry::describe($alert['contract_end_date']);
+                    $expiry_color = $expiry['state'] === 'soon' ? '#b45309' : '#C82333';
                     ?>
                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 12px 0; border-bottom: 1px solid #f5f5f5;">
                         <div>
                             The contract of <strong><?php echo $staff_name; ?></strong>
                             (<?php echo htmlspecialchars($alert['position']); ?><?php echo !empty($alert['department']) ? ', ' . htmlspecialchars($alert['department']) : ''; ?>)
-                            will be <strong><?php echo $status_text; ?></strong>
-                            <small style="color: #6c757d;">(ends <?php echo $end_date_fmt; ?>)</small>
+                            <strong style="color: <?php echo $expiry_color; ?>;"><?php echo $expiry['text']; ?></strong>
+                            <small style="color: #6c757d;">&mdash; end date: <?php echo $expiry['dateText']; ?></small>
                         </div>
                         <button type="button" class="btn btn-sm" style="background: #C82333; color: #fff; white-space: nowrap; border: none; padding: 8px 16px; border-radius: 6px;" data-bs-toggle="modal" data-bs-target="#renewModal<?php echo $alert['id']; ?>">
                             <i class="fas fa-rotate"></i> Renew Contract
@@ -683,6 +716,19 @@ $upcoming_interviews = $upcoming_interviews_query->get_result()->fetch_all(MYSQL
                 <div class="stat-label">Handbooks Uploaded</div>
                 <div class="stat-value"><?php echo $total_handbooks; ?></div>
             </div>
+
+            <a href="pages/deductions-report.php" class="stat-card" style="border-left-color: #dc3545; text-decoration: none; color: inherit;">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #dc3545 0%, #a71d2a 100%);">
+                    <i class="fas fa-file-invoice-dollar"></i>
+                </div>
+                <div class="stat-label">Deductions in <?php echo date('F'); ?></div>
+                <div class="stat-value">₦<?php echo number_format($deduction_summary['amount']); ?></div>
+                <div style="font-size: 12px; color: #888; margin-top: 4px;">
+                    <?php echo $deduction_summary['staff']; ?> staff &middot;
+                    <?php echo $deduction_summary['late']; ?> late &middot;
+                    <?php echo $deduction_summary['absent']; ?> absent &mdash; view report
+                </div>
+            </a>
         </div>
 
         <!-- Quick Actions -->
@@ -700,6 +746,55 @@ $upcoming_interviews = $upcoming_interviews_query->get_result()->fetch_all(MYSQL
                 <i class="fas fa-users" style="font-size: 2rem; color: #FF9800; margin-bottom: 10px; display: block;"></i>
                 Manage Applicants
             </a>
+        </div>
+
+        <!-- Substitute staff: who is covering for whom -->
+        <h3 class="section-title">Substitute Staff</h3>
+        <div style="background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 30px;">
+            <?php if (empty($substitute_list)): ?>
+                <div style="text-align: center; padding: 20px 10px; color: #999;">
+                    <i class="fas fa-people-arrows" style="font-size: 1.6rem; margin-bottom: 8px; display: block;"></i>
+                    No substitute appointments right now. They appear here when a staff member names a colleague on a leave or temporary exit request.
+                </div>
+            <?php else: ?>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.92rem;">
+                        <thead>
+                            <tr style="text-align: left; color: #6c757d; border-bottom: 2px solid #eee;">
+                                <th style="padding: 8px;">Staff away</th>
+                                <th style="padding: 8px;">Substitute (covering)</th>
+                                <th style="padding: 8px;">For</th>
+                                <th style="padding: 8px;">When</th>
+                                <th style="padding: 8px;">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($substitute_list as $sub): ?>
+                                <tr style="border-bottom: 1px solid #f0f0f0;">
+                                    <td style="padding: 8px;">
+                                        <strong><?php echo htmlspecialchars(trim($sub['req_first'] . ' ' . $sub['req_last'])); ?></strong>
+                                        <?php if (!empty($sub['department'])): ?><br><small style="color:#888;"><?php echo htmlspecialchars($sub['department']); ?></small><?php endif; ?>
+                                    </td>
+                                    <td style="padding: 8px;"><strong><?php echo htmlspecialchars(trim($sub['sub_first'] . ' ' . $sub['sub_last'])); ?></strong></td>
+                                    <td style="padding: 8px;"><?php echo htmlspecialchars($sub['what']); ?></td>
+                                    <td style="padding: 8px;">
+                                        <?php echo date('M j, Y', strtotime($sub['date_from'])); ?>
+                                        <?php if ($sub['date_to'] !== $sub['date_from']): ?> &ndash; <?php echo date('M j, Y', strtotime($sub['date_to'])); ?><?php endif; ?>
+                                        <?php if (!empty($sub['time_text'])): ?><br><small style="color:#888;"><?php echo htmlspecialchars($sub['time_text']); ?></small><?php endif; ?>
+                                    </td>
+                                    <td style="padding: 8px;">
+                                        <?php if ($sub['status'] === 'approved'): ?>
+                                            <span style="background:#d1e7dd;color:#0f5132;padding:3px 10px;border-radius:12px;font-size:12px;">Approved</span>
+                                        <?php else: ?>
+                                            <span style="background:#fff3cd;color:#856404;padding:3px 10px;border-radius:12px;font-size:12px;">Awaiting approval</span>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php endif; ?>
         </div>
 
         <!-- Upcoming Interviews -->

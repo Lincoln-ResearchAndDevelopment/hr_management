@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        * {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        body {
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #C82333 0%, #a01c28 100%);
+            color: #ffffff;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+        .content {
+            padding: 30px;
+            color: #333333;
+        }
+        .content p {
+            line-height: 1.6;
+            margin: 15px 0;
+        }
+        .details {
+            background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+            border-left: 4px solid #C82333;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .detail-row {
+            padding: 8px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        .detail-label {
+            font-weight: 600;
+            color: #495057;
+        }
+        .button {
+            display: inline-block;
+            background-color: #C82333;
+            color: #ffffff !important;
+            text-decoration: none;
+            padding: 12px 28px;
+            border-radius: 6px;
+            font-weight: 600;
+            margin: 10px 0;
+        }
+        .footer {
+            background-color: #f8f9fa;
+            padding: 20px;
+            text-align: center;
+            color: #666666;
+            font-size: 12px;
+        }
+        .footer p {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>You Have Been Appointed as a Substitute</h1>
+        </div>
+
+        <div class="content">
+            <p>Hi {{substituteName}},</p>
+
+            <p><strong>{{requesterName}}</strong> has named you as their substitute for the {{requestLabel}} below. This means you will be covering their duties while they are away.</p>
+
+            <div class="details">
+                <div class="detail-row"><span class="detail-label">Staff you are covering for:</span> {{requesterName}}</div>
+                <div class="detail-row"><span class="detail-label">Type:</span> {{requestLabel}}</div>
+                <div class="detail-row"><span class="detail-label">When:</span> {{whenText}}</div>
+            </div>
+
+            <p>The request is still subject to approval. You can also see this on your staff dashboard.</p>
+
+            <p style="text-align: center;"><a href="{{dashboardUrl}}" class="button">Open Staff Dashboard</a></p>
+
+            <p>If you have any concerns about covering, please speak to {{requesterName}} or to HR.</p>
+
+            <p>Best regards,<br>
+            <strong>Lincoln HR Team</strong><br>
+            <a href="mailto:umarsabdul5@gmail.com" style="color: #C82333;">umarsabdul5@gmail.com</a></p>
+        </div>
+
+        <div class="footer">
+            <p>&copy; 2026 Lincoln University College. All rights reserved.</p>
+            <p>This message was sent from a no-reply address. To contact HR, write to <a href="mailto:umarsabdul5@gmail.com" style="color: inherit;">umarsabdul5@gmail.com</a>.</p>
+        </div>
+    </div>
+</body>
+</html>

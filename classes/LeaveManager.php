@@ -407,9 +407,10 @@ class LeaveManager
             return [];
         }
 
+        // Department names are matched ignoring stray spaces and letter case ("Mathematics " = "mathematics")
         $query = "SELECT id, first_name, last_name, email, lincoln_email, position
                     FROM staff
-                    WHERE department = ? AND status = 'active'
+                    WHERE TRIM(department) = TRIM(?) AND status = 'active'
                         AND is_hod = 1 AND staff_type = 'academic'";
         $types = 's';
         $params = [$department];

@@ -8,6 +8,7 @@ session_start();
 include '../../config.php';
 include '../classes/HRAuth.php';
 include '../../classes/LeaveManager.php';
+include '../../classes/SubstituteNotifier.php';
 
 $hr_auth = new HRAuth($conn);
 if (!$hr_auth->isHRLoggedIn()) {
@@ -259,6 +260,9 @@ foreach ($all_requests as &$req) {
     $req['staff_name'] = $staff ? $staff['first_name'] . ' ' . $staff['last_name'] : 'Unknown';
     $req['position'] = $staff['position'] ?? 'N/A';
     $req['department'] = $staff['department'] ?? 'N/A';
+
+    // The colleague named as substitute, so HR can see who is covering
+    $req['substitute'] = SubstituteNotifier::forRequest($conn, $req['request_type'], $req['id']);
 
     // Get leave type information for leave requests (only if new schema exists)
     if ($req['request_type'] === 'leave' && isset($req['leave_type_id']) && !empty($req['leave_type_id'])) {
@@ -907,6 +911,12 @@ unset($req);
                                 <div class="detail-value"><?php echo $exit_end ? date('h:i A', strtotime($exit_end)) : '-'; ?></div>
                             </div>
                             <div class="detail-item">
+                                <div class="detail-label">Substitute Staff</div>
+                                <div class="detail-value">
+                                    <?php echo !empty($req['substitute']) ? htmlspecialchars($req['substitute']['name']) : 'None'; ?>
+                                </div>
+                            </div>
+                            <div class="detail-item">
                                 <div class="detail-label">Reason</div>
                                 <div class="detail-value"><?php echo htmlspecialchars($req['reason']); ?></div>
                             </div>
@@ -922,6 +932,12 @@ unset($req);
                             <div class="detail-item">
                                 <div class="detail-label">End Date</div>
                                 <div class="detail-value"><?php echo date('M d, Y', strtotime($req['end_date'])); ?></div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">Substitute Staff</div>
+                                <div class="detail-value">
+                                    <?php echo !empty($req['substitute']) ? htmlspecialchars($req['substitute']['name']) : 'None'; ?>
+                                </div>
                             </div>
                             <div class="detail-item">
                                 <div class="detail-label">Reason</div>

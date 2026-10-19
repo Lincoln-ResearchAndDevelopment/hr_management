@@ -105,9 +105,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
             $attendance_id_error = $attendance_id !== '' ? validateAttendanceId($conn, $attendance_id) : null;
 
+            // One Head of Department per department
+            $existing_hod = $is_hod ? ((new LeaveManager($conn))->getDepartmentHeads($department)[0] ?? null) : null;
+
             if ($attendance_id_error !== null) {
                 $status_message = '<div class="alert alert-danger alert-dismissible fade show" role="alert">
                     <i class="fas fa-exclamation-circle"></i> ' . htmlspecialchars($attendance_id_error) . '
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>';
+            } elseif ($existing_hod) {
+                $status_message = '<div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <i class="fas fa-exclamation-circle"></i> ' . htmlspecialchars($department) . ' already has a Head of Department: <strong>' . htmlspecialchars($existing_hod['first_name'] . ' ' . $existing_hod['last_name']) . '</strong>. A department can only have one. Untick "Assign as Head of Department", or first remove ' . htmlspecialchars($existing_hod['first_name']) . '\'s Head of Department role.
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>';
             } elseif (!empty($first_name) && !empty($last_name) && !empty($email) && !empty($position)) {
@@ -159,9 +167,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $insert_staff->bind_param("ssssssssssdsssiii", $first_name, $last_name, $email, $hashed_password, $position, $department, $campus_location, $hire_date, $contract_start_date, $contract_end_date, $salary, $lincoln_email, $attendance_id, $staff_type, $is_hod, $user_id, $user['id']);
 
                 if ($insert_staff->execute()) {
-                    // Send credentials email to original signup email
+                    // The login details go to the Lincoln email AND the personal email: a new staff member
+                    // may not be able to open the Lincoln mailbox yet.
                     $mailer = new Mailer();
-                    // Staff are emailed at their official Lincoln email only, never the personal one.
                     $email_sent = $mailer->sendStaffEmploymentCredentials(
                         $lincoln_email !== '' ? $lincoln_email : $email,
                         $first_name,
@@ -169,10 +177,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         $lincoln_email,
                         $temp_password ?? 'N/A',
                         $position,
-                        $department
+                        $department,
+                        $email
                     );
 
-                    $email_status = $email_sent ? 'Credentials sent to their Lincoln email' : 'Note: Email sending may have failed';
+                    $email_status = $email_sent
+                        ? 'Credentials sent to their Lincoln email (' . htmlspecialchars($lincoln_email) . ') and their personal email (' . htmlspecialchars($email) . ')'
+                        : 'Note: Email sending may have failed';
 
                     $status_message = '<div class="alert alert-success alert-dismissible fade show" role="alert">
                         <i class="fas fa-check-circle"></i> Staff member added successfully!<br>
@@ -231,6 +242,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $status_message = $alert('danger', 'exclamation-circle', 'Staff member not found.');
             } elseif ($new_type === 'academic' && $want_hod && trim($info['department'] ?? '') === '') {
                 $status_message = $alert('danger', 'exclamation-circle', 'Give this staff member a department before making them Head of Department.');
+            } elseif ($new_type === 'academic' && $want_hod && ($other_hod = (new LeaveManager($conn))->getDepartmentHeads($info['department'], $staff_id)[0] ?? null)) {
+                // One Head of Department per department
+                $status_message = $alert('danger', 'exclamation-circle', trim($info['department']) . ' already has a Head of Department: ' . $other_hod['first_name'] . ' ' . $other_hod['last_name'] . '. A department can only have one - remove their Head of Department role first.');
             } else {
                 // Non-academic staff can never be a Head of Department.
                 $new_hod = $new_type === 'academic' ? $want_hod : 0;
@@ -934,7 +948,16 @@ function getRoleTier($position)
                             <div class="row">
                                 <div class="col-md-6 mb-3">
                                     <label class="form-label">Department</label>
-                                    <input type="text" class="form-control" name="department">
+                                    <input type="text" class="form-control" name="department" list="department_names" autocomplete="off">
+                                    <datalist id="department_names">
+                                        <?php
+                                        $dept_names = $conn->query("SELECT DISTINCT TRIM(department) AS d FROM staff WHERE department IS NOT NULL AND TRIM(department) <> '' ORDER BY d");
+                                        while ($dept_names && ($dn = $dept_names->fetch_assoc())) {
+                                            echo '<option value="' . htmlspecialchars($dn['d']) . '">';
+                                        }
+                                        ?>
+                                    </datalist>
+                                    <div class="text-muted" style="font-size: 12px;">Pick an existing name from the list so staff and their Head of Department match.</div>
                                 </div>
                                 <div class="col-md-6 mb-3">
                                     <label class="form-label">Staff Type</label>

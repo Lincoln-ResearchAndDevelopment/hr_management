@@ -6,6 +6,8 @@
 session_start();
 include '../config.php';
 include '../classes/LeaveManager.php';
+include '../classes/ContractNotifier.php';
+include '../classes/SubstituteNotifier.php';
 
 // Check if staff is logged in
 if (!isset($_SESSION['staff_id'])) {
@@ -31,6 +33,12 @@ if (!$staff) {
     header('Location: login.php');
     exit;
 }
+
+// Contracts HR has issued to this staff member that they have not downloaded yet
+$pending_contracts = ContractNotifier::pendingForStaff($conn, $staff_id);
+
+// Colleagues who have named this staff member as their substitute (current and upcoming)
+$substitute_assignments = SubstituteNotifier::assignmentsFor($conn, $staff_id);
 
 // Get upcoming interviews where this staff member is on the interview panel
 $interviews_query = $conn->prepare(
@@ -836,6 +844,50 @@ if ($hour < 12) {
 
     <!-- Main Content -->
     <div class="main-content" id="mainContent">
+        <?php if (!empty($pending_contracts)): ?>
+            <!-- Contract issued notice: stays until the contract is downloaded -->
+            <div class="alert alert-warning d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3" role="alert">
+                <div>
+                    <i class="fas fa-file-contract me-2"></i>
+                    <strong>Your contract has been issued.</strong>
+                    Please download it and keep a copy.
+                </div>
+                <a href="download-contract.php?id=<?php echo (int) $pending_contracts[0]['id']; ?>" class="btn btn-sm btn-danger">
+                    <i class="fas fa-download me-1"></i>Download Contract
+                </a>
+            </div>
+        <?php endif; ?>
+
+        <?php if (!empty($substitute_assignments)): ?>
+            <!-- Substitute appointments: this staff member is covering for a colleague -->
+            <div class="alert alert-info mb-3" role="alert">
+                <div class="fw-semibold mb-2">
+                    <i class="fas fa-people-arrows me-2"></i>
+                    You have been appointed as a substitute
+                </div>
+                <ul class="mb-0 ps-3">
+                    <?php foreach ($substitute_assignments as $assignment): ?>
+                        <li>
+                            You are covering for <strong><?php echo htmlspecialchars($assignment['requester']); ?></strong>
+                            <?php if (!empty($assignment['position'])): ?>(<?php echo htmlspecialchars($assignment['position']); ?>)<?php endif; ?>
+                            &mdash; <?php echo htmlspecialchars($assignment['what']); ?>,
+                            <?php if ($assignment['from'] === $assignment['to']): ?>
+                                <?php echo date('M j, Y', strtotime($assignment['from'])); ?>
+                            <?php else: ?>
+                                <?php echo date('M j, Y', strtotime($assignment['from'])); ?> to <?php echo date('M j, Y', strtotime($assignment['to'])); ?>
+                            <?php endif; ?>
+                            <?php if (!empty($assignment['time_text'])): ?>, <?php echo htmlspecialchars($assignment['time_text']); ?><?php endif; ?>
+                            <?php if (in_array($assignment['status'], ['pending', 'hod_approved'], true)): ?>
+                                <span class="badge bg-warning text-dark">Awaiting approval</span>
+                            <?php else: ?>
+                                <span class="badge bg-success">Approved</span>
+                            <?php endif; ?>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        <?php endif; ?>
+
         <!-- Welcome Section -->
         <div class="welcome-section">
             <h2><?php echo $greeting; ?>, <?php echo htmlspecialchars($staff['first_name']); ?>! 👋</h2>
@@ -1080,7 +1132,56 @@ if ($hour < 12) {
         <?php endif; ?>
     </div>
 
+    <?php if (!empty($pending_contracts)): ?>
+        <!-- Contract issued popup: appears on every visit until the contract is downloaded -->
+        <div class="modal fade" id="contractIssuedModal" tabindex="-1" aria-labelledby="contractIssuedTitle" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="contractIssuedTitle"><i class="fas fa-file-contract me-2 text-danger"></i>Your contract has been issued</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="mb-2">Hi <?php echo htmlspecialchars($staff['first_name']); ?>, HR has issued your contract
+                            as <strong><?php echo htmlspecialchars($pending_contracts[0]['position']); ?></strong>.</p>
+                        <p class="mb-2 text-muted">
+                            <?php echo date('F j, Y', strtotime($pending_contracts[0]['contract_start'])); ?>
+                            to
+                            <?php echo date('F j, Y', strtotime($pending_contracts[0]['contract_end'])); ?>
+                        </p>
+                        <p class="mb-0">Please download it and keep a copy. A copy was also sent to your email.</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Later</button>
+                        <a href="download-contract.php?id=<?php echo (int) $pending_contracts[0]['id']; ?>" class="btn btn-danger" id="contractDownloadBtn">
+                            <i class="fas fa-download me-1"></i>Download Contract
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    <?php endif; ?>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    <?php if (!empty($pending_contracts)): ?>
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                const modalEl = document.getElementById('contractIssuedModal');
+                const modal = new bootstrap.Modal(modalEl);
+                modal.show();
+
+                // Once they start the download, close the popup and drop the notice
+                document.getElementById('contractDownloadBtn').addEventListener('click', function() {
+                    modal.hide();
+                    document.querySelectorAll('.alert-warning').forEach(function(el) {
+                        if (el.querySelector('a[href^="download-contract.php"]')) {
+                            el.remove();
+                        }
+                    });
+                });
+            });
+        </script>
+    <?php endif; ?>
     <script>
         // Sidebar toggle
         const toggleBtn = document.getElementById('toggleBtn');
